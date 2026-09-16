@@ -1,0 +1,48 @@
+:root {
+  --void: #000000;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --void: #000000; }
+}
+:root[data-theme='dark'] { --void: #000000; }
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  background: var(--void);
+}
+
+.stage canvas {
+  display: block;
+  cursor: default;
+}
+
+/* Dev-only mode readout, shown with ?hud while there is no voice loop to drive modes. */
+.mode-hud {
+  position: fixed;
+  bottom: 14px;
+  left: 16px;
+  font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(140, 220, 255, 0.55);
+  pointer-events: none;
+  user-select: none;
+}
