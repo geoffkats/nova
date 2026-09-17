@@ -63,6 +63,11 @@ body,
   border-color: rgba(150, 230, 255, 0.6);
 }
 
+.mic-toggle[data-awake] {
+  color: rgba(180, 255, 210, 0.95);
+  border-color: rgba(120, 255, 190, 0.7);
+}
+
 .mic-toggle:disabled {
   opacity: 0.5;
   cursor: default;
@@ -93,15 +98,10 @@ body,
   color: rgba(140, 220, 255, 0.35);
 }
 
-html.card,
-html.card body,
-html.card #root {
+html.overlay,
+html.overlay body,
+html.overlay #root {
   background: transparent;
-}
-
-html.card .artifact-card {
-  width: auto;
-  margin: 8px;
 }
 
 .artifact-stage {
@@ -112,61 +112,282 @@ html.card .artifact-card {
   pointer-events: none;
 }
 
-.artifact-stage .artifact-card {
+.artifact-stage .holo-card {
   pointer-events: auto;
 }
 
-.artifact-card {
-  width: 360px;
-  padding: 14px 16px 12px;
-  font: 500 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: rgba(210, 245, 255, 0.92);
-  background: rgba(6, 18, 28, 0.82);
-  border: 1px solid rgba(120, 210, 255, 0.35);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(80, 190, 255, 0.12);
-  backdrop-filter: blur(10px);
+.holo-card,
+.holo-board {
+  position: relative;
+  font: 500 12px/1.4 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  color: rgba(200, 248, 255, 0.95);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(40, 210, 255, 0.16), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(40, 255, 200, 0.08), transparent 50%),
+    linear-gradient(180deg, rgba(10, 42, 56, 0.55), rgba(2, 10, 16, 0.82));
+  border: 1px solid rgba(110, 230, 255, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5) inset,
+    0 0 40px rgba(30, 190, 255, 0.22),
+    0 22px 55px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px) saturate(1.35);
   -webkit-app-region: drag;
+  overflow: hidden;
 }
 
-.artifact-card__kind {
-  margin: 0 0 4px;
-  letter-spacing: 0.18em;
+.holo-card::before,
+.holo-board::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 2px,
+    rgba(120, 230, 255, 0.035) 2px 3px
+  );
+  opacity: 0.8;
+}
+
+.holo-card__scan,
+.holo-board__scan {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(120, 240, 255, 0.12),
+    transparent
+  );
+  animation: holo-scan 4.8s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+@keyframes holo-scan {
+  0% { top: -30%; }
+  100% { top: 110%; }
+}
+
+.holo-card {
+  width: 360px;
+  padding: 18px 18px 14px;
+  border-radius: 2px;
+}
+
+html.overlay .holo-card {
+  width: auto;
+  margin: 10px;
+}
+
+.holo-card__corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: rgba(150, 245, 255, 0.9);
+  border-style: solid;
+  border-width: 0;
+  z-index: 2;
+}
+
+.holo-card__corner--tl { top: 6px; left: 6px; border-top-width: 1px; border-left-width: 1px; }
+.holo-card__corner--tr { top: 6px; right: 6px; border-top-width: 1px; border-right-width: 1px; }
+.holo-card__corner--bl { bottom: 6px; left: 6px; border-bottom-width: 1px; border-left-width: 1px; }
+.holo-card__corner--br { bottom: 6px; right: 6px; border-bottom-width: 1px; border-right-width: 1px; }
+
+.holo-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.holo-card__mark,
+.holo-board__mark {
+  margin: 0;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  font-size: 9px;
+  color: rgba(90, 255, 220, 0.88);
+  text-shadow: 0 0 10px rgba(60, 255, 210, 0.35);
+}
+
+.holo-card__kind {
+  margin: 0;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   font-size: 10px;
-  color: rgba(140, 220, 255, 0.55);
+  color: rgba(150, 225, 255, 0.55);
 }
 
-.artifact-card__title {
-  margin: 0 0 12px;
-  font-size: 13px;
-  letter-spacing: 0.02em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.holo-card__title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  letter-spacing: 0.03em;
+  color: rgba(235, 252, 255, 0.98);
+  text-shadow: 0 0 16px rgba(80, 220, 255, 0.4);
 }
 
-.artifact-card__row {
+.holo-card__row,
+.holo-note__row {
   display: flex;
   gap: 8px;
   -webkit-app-region: no-drag;
 }
 
-.artifact-card__btn {
+.holo-card__btn,
+.holo-note__btn,
+.holo-board__ghost {
   flex: 1;
-  padding: 8px 10px;
-  font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.14em;
+  padding: 9px 10px;
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(10, 24, 32, 0.92);
-  background: rgba(160, 230, 255, 0.88);
+  color: rgba(4, 18, 26, 0.92);
+  background: linear-gradient(180deg, rgba(190, 252, 255, 0.98), rgba(70, 210, 230, 0.84));
   border: 0;
-  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(80, 220, 255, 0.28);
+}
+
+.holo-card__btn--ghost,
+.holo-note__btn--ghost,
+.holo-board__ghost {
+  flex: 0 0 auto;
+  color: rgba(190, 245, 255, 0.85);
+  background: transparent;
+  border: 1px solid rgba(90, 210, 255, 0.34);
+  box-shadow: none;
+}
+
+.holo-board {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 16px);
+  margin: 8px;
+  padding: 16px 14px 12px;
+  border-radius: 2px;
+}
+
+.holo-board__top {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+.holo-board__drag {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.holo-board__grip {
+  width: 10px;
+  height: 28px;
+  flex: 0 0 auto;
+  background:
+    radial-gradient(circle, rgba(140, 240, 255, 0.85) 1.2px, transparent 1.4px) 0 0 / 5px 7px,
+    radial-gradient(circle, rgba(140, 240, 255, 0.85) 1.2px, transparent 1.4px) 5px 3.5px / 5px 7px;
+  opacity: 0.75;
+}
+
+.holo-board__title {
+  margin: 4px 0 0;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  font-size: 13px;
+  color: rgba(220, 252, 255, 0.94);
+  text-shadow: 0 0 14px rgba(70, 220, 255, 0.35);
+}
+
+.holo-board__cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+  -webkit-app-region: no-drag;
+}
+
+.holo-board__ghost {
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
   cursor: pointer;
 }
 
-.artifact-card__btn--ghost {
-  color: rgba(200, 240, 255, 0.8);
-  background: transparent;
-  border: 1px solid rgba(120, 210, 255, 0.28);
+.holo-board__col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px 8px;
+  border: 1px solid rgba(70, 190, 230, 0.24);
+  background:
+    linear-gradient(180deg, rgba(20, 70, 90, 0.18), transparent 40%),
+    rgba(0, 18, 28, 0.42);
+}
+
+.holo-board__col h2 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(130, 230, 255, 0.75);
+}
+
+.holo-board__col h2 span {
+  color: rgba(80, 245, 210, 0.85);
+}
+
+.holo-board__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.holo-note {
+  padding: 11px 10px 9px;
+  border: 1px solid rgba(90, 210, 240, 0.32);
+  background:
+    linear-gradient(135deg, rgba(30, 90, 110, 0.35), transparent 60%),
+    rgba(4, 24, 34, 0.78);
+  cursor: grab;
+  box-shadow: 0 0 18px rgba(40, 180, 230, 0.08);
+}
+
+.holo-note:active {
+  cursor: grabbing;
+}
+
+.holo-note__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: rgba(235, 252, 255, 0.96);
+}
+
+.holo-note__body {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(170, 225, 240, 0.78);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.board-toggle {
+  left: auto;
+  right: 22px;
+  transform: none;
 }

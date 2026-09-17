@@ -9,6 +9,7 @@ import { useVoiceCapture, type MicStatus } from './hooks/useVoiceCapture';
 import { createBrowserStt } from './voice/browserStt';
 import { cancelSpeech, enqueuePcmChunk, playAudioBuffer, speakFallback, waitForPlayback, type BrainStatus } from './voice/playback';
 import { createQwenPcmPump } from './voice/qwenPcm';
+import { isSleepPhrase, isWakePhrase, stripWake } from './voice/wakeWord';
 import { ArtifactCard, type WorkspaceArtifact } from './artifact/ArtifactCard';
 import { detectQuality, QUALITY, stepDown, type QualityTier } from './quality';
 
@@ -31,6 +32,11 @@ const MIC_LABEL: Record<MicStatus, string> = {
   denied: 'Microphone blocked — allow access',
   unavailable: 'Mic busy or missing — close other apps',
 };
+
+function micButtonLabel(status: MicStatus, session: 'asleep' | 'awake', live: boolean) {
+  if (status !== 'on' || !live) return MIC_LABEL[status];
+  return session === 'awake' ? 'Sleep Nova' : 'Listening for Hey Nova';
+}
 
 function LevelReadout({
   levelRef,
@@ -72,6 +78,11 @@ export default function App() {
   const sttRef = useRef(createBrowserStt());
   const brainRef = useRef<BrainStatus>({ ready: false });
   const qwenPump = useRef(createQwenPcmPump());
+  const sessionRef = useRef<'asleep' | 'awake'>('asleep');
+  const wakingRef = useRef(false);
+  const earsAuto = useRef(false);
+  const transcribingRef = useRef(false);
+  const [session, setSession] = useState<'asleep' | 'awake'>('asleep');
   const [lastEvent, setLastEvent] = useState('—');
   const [brain, setBrain] = useState<BrainStatus>({ ready: false });
   const [artifact, setArtifact] = useState<WorkspaceArtifact | null>(null);
@@ -98,12 +109,55 @@ export default function App() {
     }
   };
 
+  const putToSleep = () => {
+    if (sessionRef.current === 'asleep' && !wakingRef.current) return;
+    sessionRef.current = 'asleep';
+    wakingRef.current = false;
+    setSession('asleep');
+    replyGen.current += 1;
+    cancelSpeech();
+    window.avatarHost?.cancelTts?.();
+    qwenPump.current.flush();
+    window.avatarHost?.qwenStop?.();
+    setMode('idle');
+    setLastEvent('sleeping · say hey nova');
+  };
+
+  const wakeUp = async (rest = '') => {
+    if (sessionRef.current === 'awake' || wakingRef.current) return;
+    wakingRef.current = true;
+    setLastEvent('waking…');
+    setMode('listening');
+    const status = brainRef.current.voiceRuntime ? brainRef.current : await refreshBrain();
+    if (status.voiceRuntime === 'qwen') {
+      const started = await window.avatarHost?.qwenStart?.();
+      if (started && !started.ok) {
+        wakingRef.current = false;
+        sessionRef.current = 'asleep';
+        setSession('asleep');
+        setMode('idle');
+        setLastEvent(started.error || 'qwen failed to connect');
+        return;
+      }
+      sessionRef.current = 'awake';
+      setSession('awake');
+      setLastEvent(`nova is awake · ${started?.model || status.qwenModel || 'realtime'}`);
+      const leftover = String(rest || '').trim();
+      if (leftover) window.avatarHost?.qwenText?.(leftover);
+    } else {
+      sessionRef.current = 'awake';
+      setSession('awake');
+      setLastEvent('nova is awake');
+    }
+    wakingRef.current = false;
+  };
+
   useEffect(() => {
     void refreshBrain().then(() => {
       // Prefetch Kokoro weights so the first reply is not a long silent wait.
       void window.avatarHost?.warmupTts?.().then((r) => {
-        if (r?.tts === 'qwen') setLastEvent(`qwen voice · ${brainRef.current.qwenModel ?? 'realtime'}`);
-        else if (r?.skipped || r?.tts === 'local') setLastEvent('system voice ready');
+        if (r?.tts === 'qwen') setLastEvent('say hey nova');
+        else if (r?.skipped || r?.tts === 'local') setLastEvent('system voice ready · say hey nova');
         else if (r?.ok) setLastEvent('kokoro voice ready');
         else if (r?.error) setLastEvent(`kokoro warmup: ${r.error}`);
         if (brainRef.current.qwenWanted && !brainRef.current.qwenConfigured) {
@@ -220,6 +274,10 @@ export default function App() {
         return;
       }
       if (ev.kind === 'user' && ev.text) {
+        if (isSleepPhrase(ev.text)) {
+          putToSleep();
+          return;
+        }
         setLastEvent(`you: ${ev.text}`);
         return;
       }
@@ -266,11 +324,15 @@ export default function App() {
     stop: stopMic,
   } = useVoiceCapture({
     onFrame: (frame, sampleRate) => {
-      if (!isQwen()) return;
+      if (!isQwen() || sessionRef.current !== 'awake') return;
       qwenPump.current.push(frame, sampleRate);
     },
     onSpeechStart: () => {
       const m = modeRef.current;
+      if (sessionRef.current === 'asleep') {
+        setLastEvent('heard you');
+        return;
+      }
       // Qwen smart_turn owns barge-in. Local energy VAD hears the speakers
       // and was cancelling every reply ("Conversation has no active response").
       if (isQwen()) {
@@ -295,7 +357,56 @@ export default function App() {
       setMode('listening');
     },
     onTurnEnd: (utterance, complete) => {
-      // Qwen server VAD / smart_turn owns the duplex turn. Local VAD is visuals + barge-in only.
+      if (!complete || transcribingRef.current) return;
+
+      // While awake on Qwen, still listen locally for short "sleep nova" commands.
+      if (sessionRef.current === 'awake' && isQwen()) {
+        const seconds = utterance.length / Math.max(1, sampleRateRef.current);
+        if (seconds > 3.2) return;
+        transcribingRef.current = true;
+        void (async () => {
+          try {
+            const host = window.avatarHost;
+            if (!host?.transcribe) return;
+            const result = await host.transcribe({
+              samples: Array.from(utterance),
+              sampleRate: sampleRateRef.current,
+            });
+            const text = String(result?.text || '').trim();
+            if (isSleepPhrase(text)) {
+              console.log('[sleep]', text);
+              putToSleep();
+            }
+          } finally {
+            transcribingRef.current = false;
+          }
+        })();
+        return;
+      }
+
+      if (sessionRef.current === 'asleep') {
+        transcribingRef.current = true;
+        void (async () => {
+          try {
+            const host = window.avatarHost;
+            if (!host?.transcribe) return;
+            const result = await host.transcribe({
+              samples: Array.from(utterance),
+              sampleRate: sampleRateRef.current,
+            });
+            const text = String(result?.text || '').trim();
+            if (!isWakePhrase(text)) {
+              if (text) setLastEvent('waiting for hey nova');
+              return;
+            }
+            await wakeUp(stripWake(text));
+          } finally {
+            transcribingRef.current = false;
+          }
+        })();
+        return;
+      }
+      // Groq / converse path owns the duplex turn when Qwen is off.
       if (isQwen()) return;
       if (!complete) {
         setLastEvent('pause (still listening)');
@@ -359,6 +470,10 @@ export default function App() {
             }
 
             setLastEvent(`you: ${result.userText}`);
+            if (isSleepPhrase(String(result.userText || ''))) {
+              putToSleep();
+              return;
+            }
             // Let the bridge line finish before the real answer.
             await bridgePlay.current.catch(() => {});
             if (gen !== replyGen.current) return;
@@ -427,6 +542,10 @@ export default function App() {
   const micLive = micStatus === 'on' || micStatus === 'starting';
   const toggleMic = async () => {
     if (micLive) {
+      if (sessionRef.current === 'awake') {
+        putToSleep();
+        return;
+      }
       replyGen.current += 1;
       window.clearTimeout(replyTimer.current);
       cancelSpeech();
@@ -436,21 +555,33 @@ export default function App() {
       sttRef.current.stop();
       stopMic();
       setMode('idle');
+      setLastEvent('microphone off');
     } else if (await startMic()) {
-      const status = await refreshBrain();
-      if (status.voiceRuntime === 'qwen') {
-        const started = await window.avatarHost?.qwenStart?.();
-        if (started && !started.ok) {
-          setLastEvent(started.error || 'qwen failed to connect');
-        } else {
-          setLastEvent(`qwen live · ${status.qwenModel ?? 'realtime'}`);
-        }
-      } else if (status.stt === 'browser') {
-        sttRef.current.start();
-      }
-      setMode('listening');
+      sessionRef.current = 'asleep';
+      setSession('asleep');
+      setLastEvent('listening for hey nova');
+      setMode('idle');
     }
   };
+
+  useEffect(() => {
+    if (earsAuto.current || micStatus !== 'off') return;
+    const t = window.setTimeout(() => {
+      if (earsAuto.current || micStatus !== 'off') return;
+      earsAuto.current = true;
+      void startMic().then((ok) => {
+        if (!ok) {
+          earsAuto.current = false;
+          return;
+        }
+        sessionRef.current = 'asleep';
+        setSession('asleep');
+        setLastEvent('listening for hey nova');
+        setMode('idle');
+      });
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [micStatus, startMic, setMode]);
 
   return (
     <div className="stage">
@@ -489,6 +620,7 @@ export default function App() {
       {showHud && (
         <div className="mode-hud">
           <span>mode {mode}</span>
+          <span> · {session === 'awake' ? 'awake' : 'asleep'}</span>
           <span> · turn {phase}</span>
           <span>
             {' '}
@@ -520,12 +652,20 @@ export default function App() {
       )}
       <button
         type="button"
+        className="mic-toggle board-toggle"
+        onClick={() => void window.avatarHost?.showBoard?.()}
+      >
+        Board
+      </button>
+      <button
+        type="button"
         className="mic-toggle"
         data-live={micLive || undefined}
+        data-awake={session === 'awake' || undefined}
         onClick={toggleMic}
         disabled={micStatus === 'starting'}
       >
-        {MIC_LABEL[micStatus]}
+        {micButtonLabel(micStatus, session, micLive)}
       </button>
     </div>
   );

@@ -13,6 +13,7 @@ import { buildNovaInstructions } from './novaMind.js';
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
 const DEFAULT_MODEL = 'qwen-audio-3.0-realtime-plus';
+const FLASH_MODEL = 'qwen-audio-3.0-realtime-flash';
 const DEFAULT_VOICE = 'longanqian';
 const CN_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime';
 const INTL_URL = 'wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime';
@@ -62,10 +63,59 @@ export function qwenBaseUrl() {
   return CN_URL;
 }
 
-function realtimeUrl() {
+function realtimeUrl(model = qwenModel()) {
   const base = qwenBaseUrl();
-  const model = encodeURIComponent(qwenModel());
-  return base.includes('?') ? `${base}&model=${model}` : `${base}?model=${model}`;
+  const encoded = encodeURIComponent(model);
+  return base.includes('?') ? `${base}&model=${encoded}` : `${base}?model=${encoded}`;
+}
+
+function isQuotaExhausted(text) {
+  return /free tier of the model has been exhausted|quota is used up|quota.*exhaust|Arrearage|insufficient.*balance/i.test(
+    String(text || ''),
+  );
+}
+
+function friendlyClose(reason, code) {
+  const text = String(reason || '').replace(/\u0000/g, '').trim();
+  if (isQuotaExhausted(text)) {
+    return 'Qwen free quota is used up. Enable billing in Model Studio, or set QWEN_AUDIO_REALTIME_MODEL=qwen-audio-3.0-realtime-flash';
+  }
+  if (text) return text;
+  if (code === 1006) return 'Qwen socket closed (1006)';
+  if (code != null) return `Qwen socket closed (${code})`;
+  return 'Qwen disconnected';
+}
+
+/** DashScope close reasons often exceed RFC 6455's 125-byte control-frame limit. */
+function captureOversizedClose(socket) {
+  let last = '';
+  let raw = null;
+  const onData = (chunk) => {
+    if (!Buffer.isBuffer(chunk) || chunk.length < 8) return;
+    if ((chunk[0] & 0x0f) !== 8) return;
+    if ((chunk[1] & 0x7f) !== 126) return;
+    const payloadLen = chunk.readUInt16BE(2);
+    const payload = chunk.subarray(4, Math.min(chunk.length, 4 + payloadLen));
+    if (payload.length >= 2) {
+      last = payload.subarray(2).toString('utf8').replace(/\u0000/g, '').trim();
+    }
+  };
+  const attach = (sock) => {
+    if (!sock || sock === raw || typeof sock.prependListener !== 'function') return;
+    raw = sock;
+    sock.prependListener('data', onData);
+  };
+  attach(socket?._socket);
+  if (typeof socket?.once === 'function') {
+    socket.once('upgrade', (res) => attach(res?.socket || socket._socket));
+    socket.once('open', () => attach(socket._socket));
+  }
+  return {
+    read: () => last,
+    forget() {
+      raw?.removeListener('data', onData);
+    },
+  };
 }
 
 function eventId() {
@@ -110,7 +160,7 @@ function listen(socket, type, handler) {
     return;
   }
   if (type === 'close') {
-    socket.on('close', (code) => handler({ code }));
+    socket.on('close', (code, reason) => handler({ code, reason }));
     return;
   }
   socket.on(type, handler);
@@ -147,7 +197,7 @@ async function openSocket(url, headers) {
   try {
     const mod = await import('ws');
     const WS = mod.default || mod.WebSocket;
-    if (WS) return new WS(url, { headers });
+    if (WS) return new WS(url, { headers, perMessageDeflate: false });
   } catch {
     /* optional dependency */
   }
@@ -187,6 +237,9 @@ export function createQwenSession(hooks = {}) {
   /** @type {Buffer[]} */
   let pcmQueue = [];
   let connectPromise = null;
+  let activeModel = qwenModel();
+  /** @type {{ resolve: () => void, reject: (err: Error) => void } | null} */
+  let handshake = null;
 
   function emit(kind, extra = {}) {
     try {
@@ -258,7 +311,7 @@ export function createQwenSession(hooks = {}) {
     };
     if (tools.length) session.tools = tools;
     send({ type: 'session.update', session });
-    console.log(`[qwen] session.update model=${qwenModel()} voice=${qwenVoice()} tools=${tools.length}`);
+    console.log(`[qwen] session.update model=${activeModel} voice=${qwenVoice()} tools=${tools.length}`);
   }
 
   async function runPendingTools() {
@@ -298,12 +351,15 @@ export function createQwenSession(hooks = {}) {
 
     switch (type) {
       case 'session.created':
+        console.log(`[qwen] event session.created model=${activeModel}`);
         void applySession();
         break;
       case 'session.updated':
         ready = true;
         flushPcmQueue();
-        emit('connected', { text: `qwen ${qwenModel()}` });
+        emit('connected', { text: `qwen ${activeModel}` });
+        handshake?.resolve();
+        handshake = null;
         break;
       case 'input_audio_buffer.speech_started':
         // smart_turn already drops the assistant turn. Extra response.cancel
@@ -393,8 +449,83 @@ export function createQwenSession(hooks = {}) {
     }
   }
 
+  async function connectOnce(model) {
+    const key = qwenKey();
+    const url = realtimeUrl(model);
+    activeModel = model;
+    ready = false;
+    console.log(`[qwen] connecting ${url.replace(/\?.*/, '')} model=${model}`);
+    const socket = await openSocket(url, {
+      Authorization: `Bearer ${key}`,
+      'x-dashscope-dataInspection': 'disable',
+    });
+    ws = socket;
+    const capture = captureOversizedClose(socket);
+
+    const opened = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Qwen realtime connect timed out')), 12_000);
+      listen(socket, 'open', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      listen(socket, 'error', (err) => {
+        const msg = err?.message || err?.error?.message || '';
+        if (/invalid payload length/i.test(String(msg))) return;
+        clearTimeout(timer);
+        reject(new Error(capture.read() || 'Qwen realtime socket error'));
+      });
+    });
+
+    const updated = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Qwen session timed out')), 15_000);
+      handshake = {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      };
+    });
+
+    listen(socket, 'message', (msg) => {
+      const raw = typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString('utf8');
+      let event;
+      try {
+        event = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      handleEvent(event);
+    });
+
+    listen(socket, 'close', (ev) => {
+      const code = ev?.code;
+      const reason =
+        capture.read() ||
+        (typeof ev?.reason === 'string' ? ev.reason : Buffer.isBuffer(ev?.reason) ? ev.reason.toString('utf8') : '');
+      const message = friendlyClose(reason, code);
+      console.warn(`[qwen] socket closed${code != null ? ` code=${code}` : ''}${reason ? ` ${reason}` : ''}`);
+      capture.forget();
+      ready = false;
+      if (ws === socket) ws = null;
+      endAudio();
+      const pending = handshake;
+      handshake = null;
+      pending?.reject(new Error(message));
+      if (!closing && !pending) emit('error', { text: message });
+    });
+
+    await opened;
+    await updated;
+    capture.forget();
+    return { ok: true, model, voice: qwenVoice() };
+  }
+
   async function start() {
-    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return { ok: true, reused: true };
+    if (ready && ws && ws.readyState === 1) return { ok: true, reused: true, model: activeModel, voice: qwenVoice() };
     if (connectPromise) return connectPromise;
 
     const key = qwenKey();
@@ -411,49 +542,24 @@ export function createQwenSession(hooks = {}) {
     ignoreAudio = false;
 
     connectPromise = (async () => {
-      const url = realtimeUrl();
-      console.log(`[qwen] connecting ${url.replace(/\?.*/, '')} model=${qwenModel()}`);
-      const socket = await openSocket(url, {
-        Authorization: `Bearer ${key}`,
-        'OpenAI-Beta': 'realtime=v1',
-      });
-      ws = socket;
-
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(new Error('Qwen realtime connect timed out'));
-        }, 12_000);
-        listen(socket, 'open', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-        listen(socket, 'error', () => {
-          clearTimeout(timer);
-          reject(new Error('Qwen realtime socket error'));
-        });
-      });
-
-      listen(socket, 'message', (msg) => {
-        const raw = typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString('utf8');
-        let event;
+      const wanted = qwenModel();
+      try {
+        return await connectOnce(wanted);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         try {
-          event = JSON.parse(raw);
+          ws?.close();
         } catch {
-          return;
+          /* ignore */
         }
-        handleEvent(event);
-      });
-
-      listen(socket, 'close', (ev) => {
-        const code = ev?.code;
-        console.warn(`[qwen] socket closed${code != null ? ` code=${code}` : ''}`);
-        ready = false;
         ws = null;
-        endAudio();
-        if (!closing) emit('error', { text: 'qwen disconnected' });
-      });
-
-      return { ok: true, model: qwenModel(), voice: qwenVoice() };
+        ready = false;
+        if (isQuotaExhausted(message) && wanted !== FLASH_MODEL) {
+          console.warn(`[qwen] ${wanted} quota exhausted — trying ${FLASH_MODEL}`);
+          return connectOnce(FLASH_MODEL);
+        }
+        throw err;
+      }
     })()
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
@@ -465,6 +571,7 @@ export function createQwenSession(hooks = {}) {
         }
         ws = null;
         ready = false;
+        emit('error', { text: message });
         return { ok: false, error: message };
       })
       .finally(() => {

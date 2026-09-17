@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path';
 import { converse, resetConversation } from './brain/converse.js';
 import { ollamaReady } from './brain/ollama.js';
 import { cancelKokoro, ensureKokoro, kokoroDevice, kokoroReady } from './brain/kokoro.js';
+import { transcribeGroq } from './brain/groq.js';
+import { encodeWav } from './brain/wav.js';
+import { cleanTranscript, trimSilence } from './brain/transcript.js';
 import {
   createQwenSession,
   qwenConfigured,
@@ -15,9 +18,9 @@ import {
   qwenVoice,
   qwenWanted,
 } from './brain/qwenRealtime.js';
-import { isNovaLocalTool, novaLocalTools, runNovaLocalTool } from './brain/novaMind.js';
-import { isWorkspaceTool, runKnownAction, extractWorkspaceArtifact } from './agent/workspaceActions.js';
+import { executeNovaTool, listNovaTools } from './agent/novaTools.js';
 import { showArtifactCard, wireArtifactIpc } from './artifactCard.js';
+import { showNovaBoard, hideNovaBoard, wireBoardIpc } from './boardWindow.js';
 import { getMcpHub } from './agent/mcpHub.js';
 import { hasGmailCredentials, hasGmailTokens } from './agent/gmailOAuth.js';
 import { hasGwsToken } from './agent/gwsPaths.js';
@@ -197,6 +200,7 @@ async function statusPayload() {
 app.whenReady().then(() => {
   lockDownPermissions();
   wireArtifactIpc();
+  wireBoardIpc();
   createWindow();
   // Only warm Kokoro when it's the active voice — on this CPU it is ~10–25s/phrase.
   const tts = (process.env.TTS_PROVIDER?.trim() || 'local').toLowerCase();
@@ -235,29 +239,27 @@ app.whenReady().then(() => {
     preload: join(here, 'preload.cjs'),
   };
 
-  function presentArtifact(action, args, text) {
-    const art = extractWorkspaceArtifact(String(action || ''), args, text);
+  function presentArtifact(art) {
     if (!art) return;
     sendToRenderer('avatar:artifact', art);
     showArtifactCard(overlayCtx, art);
   }
 
+  function presentBoard(board, opts = {}) {
+    if (opts.show === false) {
+      hideNovaBoard();
+      return;
+    }
+    showNovaBoard(overlayCtx, board);
+  }
+
   const qwen = createQwenSession({
-    listTools: async () => {
-      const hub = await getMcpHub();
-      return [...novaLocalTools(), ...hub.listOpenAiTools()];
-    },
-    executeTool: async (name, args) => {
-      if (isNovaLocalTool(name)) return runNovaLocalTool(name, args);
-      const hub = await getMcpHub();
-      if (isWorkspaceTool(name)) {
-        const text = await runKnownAction(hub, args);
-        presentArtifact(args.action, args, text);
-        return text;
-      }
-      const result = await hub.callTool(name, args);
-      return result.text || JSON.stringify(result);
-    },
+    listTools: () => listNovaTools(),
+    executeTool: (name, args) =>
+      executeNovaTool(name, args, {
+        onArtifact: presentArtifact,
+        onBoard: presentBoard,
+      }),
     onEvent: (ev) => {
       sendToRenderer('avatar:qwen-event', ev);
       if (ev.kind === 'tool' || ev.kind === 'thinking') {
@@ -306,6 +308,11 @@ app.whenReady().then(() => {
     return qwen.start();
   });
 
+  ipcMain.handle('avatar:board-show', async () => {
+    presentBoard(undefined, { show: true });
+    return { ok: true };
+  });
+
   ipcMain.on('avatar:qwen-stop', () => {
     qwen.stop();
   });
@@ -322,6 +329,36 @@ app.whenReady().then(() => {
 
   ipcMain.on('avatar:qwen-text', (_event, text) => {
     qwen.sendText(text);
+  });
+
+  ipcMain.handle('avatar:transcribe', async (_event, payload) => {
+    const cfg = brainConfig();
+    if (!cfg.groqKey) return { ok: false, error: 'GROQ_API_KEY missing' };
+    const samples = payload?.samples;
+    const pcm =
+      samples == null
+        ? null
+        : samples instanceof Float32Array
+          ? samples
+          : new Float32Array(samples);
+    if (!pcm?.length) return { ok: false, error: 'empty audio' };
+    const rate = Number(payload?.sampleRate) || 16000;
+    const trimmed = trimSilence(pcm);
+    try {
+      const text = await transcribeGroq({
+        apiKey: cfg.groqKey,
+        model: cfg.groqSttModel,
+        wav: encodeWav(trimmed, rate),
+      });
+      const cleaned = cleanTranscript(text);
+      if (!cleaned.ok) return { ok: false, reason: cleaned.reason, text: '' };
+      console.log('[wake] transcribe', cleaned.text);
+      return { ok: true, text: cleaned.text };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[wake] transcribe failed:', message);
+      return { ok: false, error: message };
+    }
   });
 
   ipcMain.on('avatar:tts-playback-start', (_event, info) => {
@@ -437,6 +474,7 @@ app.whenReady().then(() => {
           sendToRenderer('avatar:artifact', art);
           showArtifactCard(overlayCtx, art);
         },
+        onBoard: (board, opts) => presentBoard(board, opts),
         onBridge: async (bridge) => {
           try {
             event.sender.send('avatar:bridge', {

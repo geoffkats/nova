@@ -458,6 +458,7 @@ export async function converse(opts) {
             opts.onProgress?.({ phase: 'tool', text: progressForTool(name), tool: name });
           },
           onArtifact: opts.onArtifact,
+          onBoard: opts.onBoard,
         });
         if (agent.reply) {
           reply = stripEmoji(agent.reply);

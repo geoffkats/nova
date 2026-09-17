@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('avatarHost', {
    * @param {{ samples?: Float32Array | number[], sampleRate?: number, userText?: string }} utterance
    */
   converse: (utterance) => ipcRenderer.invoke('avatar:converse', utterance),
+  transcribe: (utterance) => ipcRenderer.invoke('avatar:transcribe', utterance),
   qwenStart: () => ipcRenderer.invoke('avatar:qwen-start'),
   qwenStop: () => ipcRenderer.send('avatar:qwen-stop'),
   qwenPcm: (pcm, sampleRate) => ipcRenderer.send('avatar:qwen-pcm', pcm, sampleRate),
@@ -60,6 +61,15 @@ contextBridge.exposeInMainWorld('avatarHost', {
     ipcRenderer.on('avatar:artifact', handler);
     return () => ipcRenderer.removeListener('avatar:artifact', handler);
   },
+  onBoard: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('avatar:board', handler);
+    return () => ipcRenderer.removeListener('avatar:board', handler);
+  },
+  boardGet: () => ipcRenderer.invoke('avatar:board-get'),
+  boardAct: (args) => ipcRenderer.invoke('avatar:board-act', args),
+  hideBoard: () => ipcRenderer.send('avatar:board-hide'),
+  showBoard: () => ipcRenderer.invoke('avatar:board-show'),
   openUrl: (url) => ipcRenderer.invoke('avatar:open-url', url),
   dismissArtifact: () => ipcRenderer.send('avatar:dismiss-artifact'),
 });

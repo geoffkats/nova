@@ -199,6 +199,10 @@ export interface AvatarHost {
     sampleRate?: number;
     userText?: string;
   }) => Promise<ConverseResult>;
+  transcribe?: (utterance: {
+    samples?: Float32Array | number[];
+    sampleRate?: number;
+  }) => Promise<{ ok: boolean; text?: string; error?: string; reason?: string }>;
   qwenStart?: () => Promise<{ ok: boolean; error?: string; model?: string; voice?: string }>;
   qwenStop?: () => void;
   qwenPcm?: (pcm: ArrayBuffer, sampleRate: number) => void;
@@ -228,6 +232,11 @@ export interface AvatarHost {
   onProgress?: (cb: (data: { phase?: string; text?: string; tool?: string }) => void) => () => void;
   onQwenEvent?: (cb: (data: { kind: string; text?: string; tool?: string }) => void) => () => void;
   onArtifact?: (cb: (data: { kind: string; title: string; url: string; id?: string }) => void) => () => void;
+  onBoard?: (cb: (data: { cards: Array<Record<string, unknown>> }) => void) => () => void;
+  boardGet?: () => Promise<{ cards: Array<Record<string, unknown>> }>;
+  boardAct?: (args: Record<string, unknown>) => Promise<{ cards: Array<Record<string, unknown>> }>;
+  hideBoard?: () => void;
+  showBoard?: () => Promise<{ ok: boolean }>;
   openUrl?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   dismissArtifact?: () => void;
 }

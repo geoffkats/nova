@@ -5,6 +5,8 @@
 
 import { BrowserWindow, ipcMain, screen, shell } from 'electron';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isAllowedFileUrl } from './agent/fileActions.js';
 
 /** @type {BrowserWindow | null} */
 let cardWin = null;
@@ -28,13 +30,32 @@ function isGoogleOpenUrl(raw) {
   }
 }
 
+function isHttpUrl(raw) {
+  try {
+    const u = new URL(String(raw || ''));
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isOpenableUrl(raw) {
+  return isGoogleOpenUrl(raw) || isHttpUrl(raw) || isAllowedFileUrl(raw);
+}
+
 export function wireArtifactIpc() {
   if (wired) return;
   wired = true;
   ipcMain.handle('avatar:open-url', async (_event, url) => {
-    if (!isGoogleOpenUrl(url)) return { ok: false, error: 'blocked url' };
-    await shell.openExternal(String(url));
-    return { ok: true };
+    if (isHttpUrl(url)) {
+      await shell.openExternal(String(url));
+      return { ok: true };
+    }
+    if (isAllowedFileUrl(url)) {
+      const err = await shell.openPath(fileURLToPath(String(url)));
+      return err ? { ok: false, error: err } : { ok: true };
+    }
+    return { ok: false, error: 'blocked url' };
   });
   ipcMain.on('avatar:dismiss-artifact', () => {
     if (cardWin && !cardWin.isDestroyed()) cardWin.hide();
@@ -57,7 +78,7 @@ function positionCard(win) {
  */
 export function showArtifactCard(ctx, artifact) {
   wireArtifactIpc();
-  if (!artifact?.url || !isGoogleOpenUrl(artifact.url)) return;
+  if (!artifact?.url || !isOpenableUrl(artifact.url)) return;
   lastArtifact = artifact;
 
   if (!cardWin || cardWin.isDestroyed()) {
