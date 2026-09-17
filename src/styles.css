@@ -34,6 +34,40 @@ body,
   cursor: default;
 }
 
+/* Mic gate — browsers and Electron both need a click before granting the microphone. */
+.mic-toggle {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 18px;
+  font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(170, 230, 255, 0.75);
+  background: rgba(10, 30, 44, 0.45);
+  border: 1px solid rgba(120, 210, 255, 0.28);
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: color 160ms, border-color 160ms, opacity 160ms;
+}
+
+.mic-toggle:hover:not(:disabled) {
+  color: rgba(225, 248, 255, 0.95);
+  border-color: rgba(150, 230, 255, 0.55);
+}
+
+.mic-toggle[data-live] {
+  color: rgba(225, 248, 255, 0.95);
+  border-color: rgba(150, 230, 255, 0.6);
+}
+
+.mic-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Dev-only mode readout, shown with ?hud while there is no voice loop to drive modes. */
 .mode-hud {
   position: fixed;
@@ -45,4 +79,94 @@ body,
   color: rgba(140, 220, 255, 0.55);
   pointer-events: none;
   user-select: none;
+}
+
+.mode-hud__device {
+  display: block;
+  margin-top: 6px;
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: rgba(140, 220, 255, 0.35);
+}
+
+html.card,
+html.card body,
+html.card #root {
+  background: transparent;
+}
+
+html.card .artifact-card {
+  width: auto;
+  margin: 8px;
+}
+
+.artifact-stage {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.artifact-stage .artifact-card {
+  pointer-events: auto;
+}
+
+.artifact-card {
+  width: 360px;
+  padding: 14px 16px 12px;
+  font: 500 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgba(210, 245, 255, 0.92);
+  background: rgba(6, 18, 28, 0.82);
+  border: 1px solid rgba(120, 210, 255, 0.35);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(80, 190, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-app-region: drag;
+}
+
+.artifact-card__kind {
+  margin: 0 0 4px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: rgba(140, 220, 255, 0.55);
+}
+
+.artifact-card__title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-card__row {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.artifact-card__btn {
+  flex: 1;
+  padding: 8px 10px;
+  font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(10, 24, 32, 0.92);
+  background: rgba(160, 230, 255, 0.88);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.artifact-card__btn--ghost {
+  color: rgba(200, 240, 255, 0.8);
+  background: transparent;
+  border: 1px solid rgba(120, 210, 255, 0.28);
 }

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "m1",
+    "from": "alex@clientstudio.com",
+    "to": "you@example.com",
+    "subject": "Website project — next milestone",
+    "date": "2026-09-16T14:22:00Z",
+    "unread": true,
+    "snippet": "Can we move the launch review to Friday? The homepage mockups are ready for your eyes.",
+    "body": "Hi,\n\nCan we move the launch review to Friday afternoon? The homepage mockups are ready and I'd love your notes before we hand off to engineering.\n\nAlso attaching the revised sitemap.\n\nThanks,\nAlex"
+  },
+  {
+    "id": "m2",
+    "from": "mentor@codeacademy.io",
+    "to": "you@example.com",
+    "subject": "Code Academy — assignment feedback",
+    "date": "2026-09-16T11:05:00Z",
+    "unread": true,
+    "snippet": "Your latest project looks strong. Two items need attention before Friday's review.",
+    "body": "Hello,\n\nYour latest project looks strong. Two items need attention before Friday's review:\n1. Add error handling on the auth path\n2. Write a short README for the demo\n\nPing me when those are in.\n\n— Mentor"
+  },
+  {
+    "id": "m3",
+    "from": "noreply@github.com",
+    "to": "you@example.com",
+    "subject": "[holo-avatar] CI passed on main",
+    "date": "2026-09-15T22:10:00Z",
+    "unread": true,
+    "snippet": "All checks have passed for commit on main.",
+    "body": "All checks have passed for your latest push to main.\n\nView the run on GitHub Actions."
+  },
+  {
+    "id": "m4",
+    "from": "newsletter@devtools.week",
+    "to": "you@example.com",
+    "subject": "This week in developer tools",
+    "date": "2026-09-15T08:00:00Z",
+    "unread": true,
+    "snippet": "MCP servers, local TTS, and what shipped in Electron 44.",
+    "body": "This week: MCP servers everywhere, local TTS that doesn't sound like a robot, and Electron 44 notes.\n\nUnsubscribe anytime."
+  },
+  {
+    "id": "m5",
+    "from": "billing@cloudhost.example",
+    "to": "you@example.com",
+    "subject": "Invoice paid — thank you",
+    "date": "2026-09-14T16:40:00Z",
+    "unread": false,
+    "snippet": "We received your payment for September.",
+    "body": "We received your payment for September. Receipt attached (demo)."
+  },
+  {
+    "id": "m6",
+    "from": "sam@friends.example",
+    "to": "you@example.com",
+    "subject": "Coffee this weekend?",
+    "date": "2026-09-14T09:12:00Z",
+    "unread": true,
+    "snippet": "Are you free Saturday morning?",
+    "body": "Hey — are you free Saturday morning for coffee? No agenda, just catch up."
+  },
+  {
+    "id": "m7",
+    "from": "security@accounts.example",
+    "to": "you@example.com",
+    "subject": "New sign-in from Chrome on Windows",
+    "date": "2026-09-13T19:55:00Z",
+    "unread": true,
+    "snippet": "We noticed a new sign-in to your account.",
+    "body": "We noticed a new sign-in to your account from Chrome on Windows.\n\nIf this was you, you can ignore this message."
+  }
+]

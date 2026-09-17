@@ -8,4 +8,11 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react(), ...(mode === 'singlefile' ? [viteSingleFile()] : [])],
   build: { chunkSizeWarningLimit: 2000 },
+  // Electron expects exactly 5173. Do not silently hop to 5174/5175 — that
+  // breaks mic permissions (origin mismatch) and leaves zombie Vite instances.
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+  },
 }));

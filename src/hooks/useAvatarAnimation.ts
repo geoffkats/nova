@@ -103,8 +103,6 @@ export function useAvatarAnimation({
     nextTilt: 5,
     nextPulse: 7,
     pulseStart: -100,
-    speaking: false,
-    nextSpeechToggle: 3.6,
     speechEnv: 0,
   });
 
@@ -144,7 +142,9 @@ export function useAvatarAnimation({
 
     s.listen = inputLevelRef ? THREE.MathUtils.damp(s.listen, inputLevelRef.current, 18, dt) : 0;
     s.flow += dt * (1 + thinking * 1.6 + speaking * 0.5 + listening * 0.15) * motion;
-    s.glow = 1 + listening * 0.22 + speaking * 0.3 + thinking * 0.08;
+    // While listening, your voice lifts the whole hologram — the clearest signal
+    // that he is actually hearing you rather than just posed attentively.
+    s.glow = 1 + listening * (0.22 + s.listen * 0.35) + speaking * 0.3 + thinking * 0.08;
 
     // Breathing: ~5.2 s cycle, eased so exhale lingers.
     const phase = (t / 5.2) * Math.PI * 2;
@@ -160,27 +160,25 @@ export function useAvatarAnimation({
     s.disperse = pulse * 0.7 * s.settle;
     s.converge = 0.5 + 0.5 * Math.sin(t * 0.21 + 1.1);
 
-    // Simulated speech: phrases of 1.5–3.5 s separated by pauses.
-    // Kept ungated in `raw` so the mode weight scales the output rather than
-    // feeding back into the damping above.
-    let raw: number;
+    // Speech level feeding the mouth, eye glow and rings.
+    // Kept out of `s.speech` until the end so the mode weight scales the output
+    // rather than feeding back into the damping.
     if (audioLevelRef) {
+      // Real audio: gate by mode so she only mouths her own voice.
       r.speechEnv = THREE.MathUtils.damp(r.speechEnv, audioLevelRef.current, 18, dt);
-      raw = r.speechEnv;
+      s.speech = r.speechEnv * speaking;
     } else {
-      if (t > r.nextSpeechToggle) {
-        r.speaking = !r.speaking;
-        r.nextSpeechToggle = t + (r.speaking ? 1.5 + Math.random() * 2 : 2.5 + Math.random() * 4);
-      }
-      r.speechEnv = THREE.MathUtils.damp(r.speechEnv, r.speaking ? 1 : 0, 6, dt);
+      // Simulated: the speaking mode itself decides when she talks, so the
+      // envelope follows that weight and the syllable pattern only shapes it.
+      // An independent phrase schedule here would leave her mouth still when
+      // the mode says she is mid-reply.
+      r.speechEnv = THREE.MathUtils.damp(r.speechEnv, speaking, 8, dt);
       const syllables =
         Math.abs(Math.sin(t * 9.1)) * 0.55 +
         Math.abs(Math.sin(t * 13.7 + 1.3)) * 0.3 +
         Math.abs(Math.sin(t * 4.3 + 0.4)) * 0.15;
-      raw = r.speechEnv * syllables * s.settle;
+      s.speech = r.speechEnv * syllables * s.settle;
     }
-    // He only moves his mouth when he is actually the one talking.
-    s.speech = raw * speaking;
 
     // Occasional slight head tilt.
     if (t > r.nextTilt) {

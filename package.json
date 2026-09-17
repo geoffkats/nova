@@ -9,10 +9,14 @@
     "build": "tsc -b && vite build",
     "build:single": "tsc -b && vite build --mode singlefile",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron . --dev\"",
-    "electron:start": "npm run build && electron ."
+    "electron:dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "electron:start": "npm run build && electron .",
+    "mcp:email": "node mcp/email/server.mjs",
+    "gmail:auth": "node scripts/gmail-auth.mjs",
+    "gws:auth": "python scripts/gws-auth.py"
   },
   "devDependencies": {
+    "@types/node": "^24.13.5",
     "@types/react": "~19.2.0",
     "@types/react-dom": "~19.2.0",
     "@types/three": "^0.180.0",
@@ -25,12 +29,17 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@react-three/postprocessing": "^3.1.1",
+    "dotenv": "^17.4.2",
+    "kokoro-js": "^1.2.1",
     "postprocessing": "^6.39.5",
     "react": "~19.2.0",
     "react-dom": "~19.2.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "ws": "^8.21.3",
+    "zod": "^4.6.5"
   }
 }
