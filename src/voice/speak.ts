@@ -1,6 +1,6 @@
 /**
- * Placeholder voice output until a real TTS pipeline lands.
- * Uses the browser/Electron speechSynthesis API — zero deps, actual audio.
+ * Local / system TTS — used when ElevenLabs isn't available.
+ * Picks the cleanest English neural voice Chromium exposes on the machine.
  */
 
 const REPLIES = [
@@ -25,10 +25,34 @@ function ensureVoices(): Promise<void> {
       return;
     }
     window.speechSynthesis.addEventListener('voiceschanged', done, { once: true });
-    // Some Chromium builds never fire voiceschanged if the list is already cached empty.
     window.setTimeout(done, 500);
   });
   return voicesReady;
+}
+
+/** Score Windows / macOS voices — prefer Neural / Online / Natural. */
+function scoreVoice(v: SpeechSynthesisVoice): number {
+  const name = v.name || '';
+  const lang = v.lang || '';
+  let score = 0;
+  if (/^en(-|_)/i.test(lang)) score += 20;
+  if (/en(-|_)US/i.test(lang)) score += 8;
+  if (/en(-|_)GB/i.test(lang)) score += 5;
+  if (/neural|online|natural|premium|enhanced/i.test(name)) score += 40;
+  // Common high-quality Microsoft voices
+  if (/aria|jenny|guy|sara|davis|jane|jason|tony|nancy/i.test(name)) score += 25;
+  if (/microsoft/i.test(name)) score += 5;
+  // Avoid classic robotic defaults when better options exist
+  if (/zira|david|mark|sam|espeak|compact/i.test(name)) score -= 30;
+  if (v.localService === false) score += 10; // cloud/neural often marked remote
+  if (v.default) score += 2;
+  return score;
+}
+
+function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!voices.length) return null;
+  const ranked = [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a));
+  return ranked[0] || null;
 }
 
 export function cancelSpeech() {
@@ -37,34 +61,32 @@ export function cancelSpeech() {
 }
 
 /**
- * Speak a short acknowledgment. Resolves when audio finishes (or immediately
- * if speechSynthesis is missing, so the mouth mime can still run on a timer).
+ * Speak a short line. Resolves when audio finishes.
  */
 export async function speakReply(text = nextReply()): Promise<void> {
   cancelSpeech();
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-  // System TTS reads emoji as "smiling face with smiling eyes" — strip them.
+  // System TTS reads emoji / markup literally — strip them.
   const spoken = String(text)
     .replace(/\p{Extended_Pictographic}/gu, '')
     .replace(/[\uFE0F\u200D]/g, '')
     .replace(/\b(smiling|grinning|laughing|winking)\s+face( with [\w\s]+)?\b/gi, '')
+    .replace(/[*_`#~>]+/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  if (!spoken) {
-    return;
-  }
+  if (!spoken) return;
 
   await ensureVoices();
 
   return new Promise((resolve) => {
     const utter = new SpeechSynthesisUtterance(spoken);
-    utter.rate = 1.05;
-    utter.pitch = 1.05;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred =
-      voices.find((v) => /en(-|_)US/i.test(v.lang) && /natural|neural|premium/i.test(v.name)) ||
-      voices.find((v) => /^en/i.test(v.lang));
+    // Slightly slower + flatter = cleaner / less “cartoon”
+    utter.rate = 0.96;
+    utter.pitch = 1.0;
+    utter.volume = 1;
+
+    const preferred = pickVoice(window.speechSynthesis.getVoices());
     if (preferred) utter.voice = preferred;
 
     utter.onend = () => resolve();

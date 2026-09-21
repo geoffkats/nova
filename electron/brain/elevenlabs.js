@@ -17,15 +17,28 @@ export function elevenLabsBlocked() {
 }
 
 /**
- * @param {{ apiKey: string, voiceId: string, modelId: string, text: string }} opts
+ * @param {{ apiKey: string, voiceId: string, modelId: string, text: string, clean?: boolean }} opts
  * @returns {Promise<ArrayBuffer>}
  */
-export async function synthesize({ apiKey, voiceId, modelId, text }) {
+export async function synthesize({ apiKey, voiceId, modelId, text, clean = false }) {
   if (elevenLabsBlocked()) {
     const err = new Error('ElevenLabs temporarily skipped (recent quota/payment error).');
     err.code = 'ELEVEN_QUOTA';
     throw err;
   }
+
+  const voice_settings = clean
+    ? {
+        // Reminders / short lines — steadier, less theatrical.
+        stability: 0.72,
+        similarity_boost: 0.82,
+        style: 0.15,
+        use_speaker_boost: true,
+      }
+    : {
+        stability: 0.5,
+        similarity_boost: 0.75,
+      };
 
   let res;
   try {
@@ -39,10 +52,7 @@ export async function synthesize({ apiKey, voiceId, modelId, text }) {
       body: JSON.stringify({
         text,
         model_id: modelId,
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-        },
+        voice_settings,
       }),
     });
   } catch (err) {

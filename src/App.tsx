@@ -9,7 +9,7 @@ import { useVoiceCapture, type MicStatus } from './hooks/useVoiceCapture';
 import { createBrowserStt } from './voice/browserStt';
 import { cancelSpeech, enqueuePcmChunk, playAudioBuffer, speakFallback, waitForPlayback, type BrainStatus } from './voice/playback';
 import { createQwenPcmPump } from './voice/qwenPcm';
-import { isSleepPhrase, isWakePhrase, stripWake } from './voice/wakeWord';
+import { isNudgeAck, isNudgeContinue, isSleepPhrase, isWakeFiller, isWakePhrase, stripWake, wakeAudioWorthSending } from './voice/wakeWord';
 import { ArtifactCard, type WorkspaceArtifact } from './artifact/ArtifactCard';
 import { detectQuality, QUALITY, stepDown, type QualityTier } from './quality';
 
@@ -82,6 +82,12 @@ export default function App() {
   const wakingRef = useRef(false);
   const earsAuto = useRef(false);
   const transcribingRef = useRef(false);
+  /** After junk wake attempts, pause Groq briefly so the meter doesn't spin. */
+  const wakeCooldownUntil = useRef(0);
+  const wakeMissStreak = useRef(0);
+  /** Reminder nudge: speak once, listen briefly, then sleep if no reply. */
+  const nudgeActiveRef = useRef(false);
+  const nudgeTimerRef = useRef(0);
   const [session, setSession] = useState<'asleep' | 'awake'>('asleep');
   const [lastEvent, setLastEvent] = useState('—');
   const [brain, setBrain] = useState<BrainStatus>({ ready: false });
@@ -110,7 +116,9 @@ export default function App() {
   };
 
   const putToSleep = () => {
-    if (sessionRef.current === 'asleep' && !wakingRef.current) return;
+    if (sessionRef.current === 'asleep' && !wakingRef.current && !nudgeActiveRef.current) return;
+    nudgeActiveRef.current = false;
+    window.clearTimeout(nudgeTimerRef.current);
     sessionRef.current = 'asleep';
     wakingRef.current = false;
     setSession('asleep');
@@ -121,6 +129,47 @@ export default function App() {
     window.avatarHost?.qwenStop?.();
     setMode('idle');
     setLastEvent('sleeping · say hey nova');
+  };
+
+  const clearNudge = (label = 'sleeping · say hey nova') => {
+    nudgeActiveRef.current = false;
+    window.clearTimeout(nudgeTimerRef.current);
+    if (sessionRef.current === 'asleep') {
+      setMode('idle');
+      setLastEvent(label);
+    }
+  };
+
+  const runNudge = async (nudge: { text?: string; spoken?: string }) => {
+    const line = String(nudge.spoken || nudge.text || '').trim();
+    if (!line) return;
+    window.clearTimeout(nudgeTimerRef.current);
+    nudgeActiveRef.current = true;
+    // Don't open Qwen — just light up, speak, listen briefly.
+    if (sessionRef.current === 'awake') {
+      setLastEvent(`reminder: ${nudge.text || line}`);
+      try {
+        await speakFallback(line);
+      } finally {
+        nudgeActiveRef.current = false;
+      }
+      return;
+    }
+    setLastEvent(`reminder: ${nudge.text || line}`);
+    setMode('speaking');
+    try {
+      await speakFallback(line);
+    } catch {
+      /* still open listen window */
+    }
+    if (!nudgeActiveRef.current) return;
+    setMode('listening');
+    setLastEvent('reminder · say something or I sleep');
+    nudgeTimerRef.current = window.setTimeout(() => {
+      if (!nudgeActiveRef.current) return;
+      if (sessionRef.current !== 'asleep') return;
+      clearNudge('sleeping · say hey nova');
+    }, 22_000);
   };
 
   const wakeUp = async (rest = '') => {
@@ -171,6 +220,16 @@ export default function App() {
   useEffect(() => {
     const stop = window.avatarHost?.onArtifact?.((next) => setArtifact(next));
     return () => stop?.();
+  }, []);
+
+  useEffect(() => {
+    const stop = window.avatarHost?.onNudge?.((nudge) => {
+      void runNudge(nudge);
+    });
+    return () => {
+      stop?.();
+      window.clearTimeout(nudgeTimerRef.current);
+    };
   }, []);
 
   // Live bridge + progress while tools run (email search, etc.)
@@ -362,7 +421,8 @@ export default function App() {
       // While awake on Qwen, still listen locally for short "sleep nova" commands.
       if (sessionRef.current === 'awake' && isQwen()) {
         const seconds = utterance.length / Math.max(1, sampleRateRef.current);
-        if (seconds > 3.2) return;
+        if (seconds < 0.45 || seconds > 3.2) return;
+        if (!wakeAudioWorthSending(utterance, sampleRateRef.current)) return;
         transcribingRef.current = true;
         void (async () => {
           try {
@@ -385,6 +445,39 @@ export default function App() {
       }
 
       if (sessionRef.current === 'asleep') {
+        if (nudgeActiveRef.current) {
+          if (!wakeAudioWorthSending(utterance, sampleRateRef.current)) return;
+          transcribingRef.current = true;
+          void (async () => {
+            try {
+              const host = window.avatarHost;
+              if (!host?.transcribe) return;
+              const result = await host.transcribe({
+                samples: Array.from(utterance),
+                sampleRate: sampleRateRef.current,
+              });
+              const text = String(result?.text || '').trim();
+              if (!text || isWakeFiller(text)) return;
+              if (isNudgeAck(text)) {
+                clearNudge('got it · sleeping');
+                return;
+              }
+              if (isNudgeContinue(text) || isWakePhrase(text)) {
+                clearNudge();
+                await wakeUp(isWakePhrase(text) ? stripWake(text) : text);
+                return;
+              }
+              clearNudge();
+              await wakeUp(text);
+            } finally {
+              transcribingRef.current = false;
+            }
+          })();
+          return;
+        }
+
+        if (Date.now() < wakeCooldownUntil.current) return;
+        if (!wakeAudioWorthSending(utterance, sampleRateRef.current)) return;
         transcribingRef.current = true;
         void (async () => {
           try {
@@ -395,10 +488,15 @@ export default function App() {
               sampleRate: sampleRateRef.current,
             });
             const text = String(result?.text || '').trim();
-            if (!isWakePhrase(text)) {
-              if (text) setLastEvent('waiting for hey nova');
+            if (!text || isWakeFiller(text) || !isWakePhrase(text)) {
+              wakeMissStreak.current += 1;
+              const cool = Math.min(5000, 700 * wakeMissStreak.current);
+              wakeCooldownUntil.current = Date.now() + cool;
+              if (text && !isWakeFiller(text)) setLastEvent('waiting for hey nova');
               return;
             }
+            wakeMissStreak.current = 0;
+            wakeCooldownUntil.current = 0;
             await wakeUp(stripWake(text));
           } finally {
             transcribingRef.current = false;

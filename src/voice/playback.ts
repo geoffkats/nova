@@ -125,8 +125,29 @@ export async function playAudioBuffer(audio: ArrayBuffer, mime = 'audio/mpeg'): 
   }
 }
 
-/** Local system voice — used for the free TTS path. */
+/** Prefer ElevenLabs when keyed; else cleanest system neural voice. */
 export async function speakFallback(text?: string): Promise<void> {
+  const line = String(text ?? '').trim();
+  if (line && window.avatarHost?.speakLine) {
+    try {
+      const result = await window.avatarHost.speakLine(line);
+      if (result?.ok && result.audio) {
+        const buf =
+          result.audio instanceof ArrayBuffer
+            ? result.audio
+            : ArrayBuffer.isView(result.audio)
+              ? result.audio.buffer.slice(
+                  result.audio.byteOffset,
+                  result.audio.byteOffset + result.audio.byteLength,
+                )
+              : new Uint8Array(result.audio as number[]).buffer;
+        await playAudioBuffer(buf as ArrayBuffer, result.mime || 'audio/mpeg');
+        return;
+      }
+    } catch (err) {
+      console.warn('[tts] speakLine failed, using system voice', err);
+    }
+  }
   await browserSpeak(text);
 }
 
@@ -239,6 +260,23 @@ export interface AvatarHost {
   showBoard?: () => Promise<{ ok: boolean }>;
   openUrl?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   dismissArtifact?: () => void;
+  /** Short line TTS (ElevenLabs when keyed, else renderer falls back to system). */
+  speakLine?: (text: string) => Promise<{
+    ok: boolean;
+    tts?: string;
+    mime?: string;
+    audio?: ArrayBuffer | Uint8Array | number[] | null;
+    error?: string;
+  }>;
+  listReminders?: () => Promise<{ ok: boolean; reminders: Array<Record<string, unknown>> }>;
+  addReminder?: (args: {
+    text: string;
+    when?: string;
+    inMinutes?: number;
+  }) => Promise<{ ok: boolean; error?: string; spokenHint?: string; when?: string }>;
+  onNudge?: (
+    cb: (data: { id: string; text: string; spoken: string; at: number }) => void,
+  ) => () => void;
 }
 
 declare global {

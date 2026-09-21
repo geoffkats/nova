@@ -8,6 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { config as loadEnv } from 'dotenv';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildNovaInstructions } from './novaMind.js';
 
 const INPUT_RATE = 16000;
@@ -15,8 +18,37 @@ const OUTPUT_RATE = 24000;
 const DEFAULT_MODEL = 'qwen-audio-3.0-realtime-plus';
 const FLASH_MODEL = 'qwen-audio-3.0-realtime-flash';
 const DEFAULT_VOICE = 'longanqian';
+/** Omni preset voices (Qwen-Audio `long*` names are rejected). */
+const OMNI_DEFAULT_VOICE = 'Ethan';
+const ENV_PATH = join(dirname(fileURLToPath(import.meta.url)), '../../.env');
 const CN_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime';
 const INTL_URL = 'wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime';
+
+/** Qwen-Audio realtime voices use the `long…` family; Omni uses Ethan/Cherry/Tina/… */
+function isAudioOnlyVoice(voice) {
+  return /^long/i.test(String(voice || ''));
+}
+
+function isOmniModel(model = qwenModel()) {
+  return /omni/i.test(String(model || ''));
+}
+
+function isAudioRealtimeModel(model = qwenModel()) {
+  return /qwen-audio.*realtime/i.test(String(model || ''));
+}
+
+/** Pick up .env edits without a full Electron restart (Vite HMR does not reload main). */
+function refreshEnv() {
+  loadEnv({ path: ENV_PATH, override: true });
+}
+
+function omniFallbackVoice(model = qwenModel()) {
+  const m = String(model || '').toLowerCase();
+  if (m.includes('3.5')) return 'Tina';
+  if (m.includes('turbo')) return 'Chelsie';
+  if (m.includes('flash')) return 'Cherry';
+  return OMNI_DEFAULT_VOICE;
+}
 
 export function qwenKey() {
   return (
@@ -44,7 +76,16 @@ export function qwenModel() {
 }
 
 export function qwenVoice() {
-  return process.env.QWEN_AUDIO_REALTIME_VOICE?.trim() || DEFAULT_VOICE;
+  const omni = isOmniModel();
+  const override = process.env.QWEN_AUDIO_REALTIME_VOICE?.trim();
+  const fallback = omni ? omniFallbackVoice() : DEFAULT_VOICE;
+  const voice = override || fallback;
+  // Stale .env / Audio defaults must never be sent to Omni models.
+  if (omni && isAudioOnlyVoice(voice)) {
+    console.warn(`[qwen] voice "${voice}" is Qwen-Audio only — using ${fallback} for Omni`);
+    return fallback;
+  }
+  return voice;
 }
 
 export function qwenBaseUrl() {
@@ -300,18 +341,24 @@ export function createQwenSession(hooks = {}) {
     } catch (err) {
       console.warn('[qwen] tools list failed:', err instanceof Error ? err.message : err);
     }
+    const omni = isOmniModel(activeModel);
     const session = {
       modalities: ['text', 'audio'],
       instructions: buildNovaInstructions(),
       voice: qwenVoice(),
       input_audio_format: 'pcm',
       output_audio_format: 'pcm',
-      turn_detection: { type: 'smart_turn' },
-      max_history_turns: 30,
+      // Qwen-Audio: smart_turn. Qwen-Omni: server_vad / semantic_vad only.
+      turn_detection: omni
+        ? { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 }
+        : { type: 'smart_turn' },
     };
+    if (!omni) session.max_history_turns = 30;
     if (tools.length) session.tools = tools;
     send({ type: 'session.update', session });
-    console.log(`[qwen] session.update model=${activeModel} voice=${qwenVoice()} tools=${tools.length}`);
+    console.log(
+      `[qwen] session.update model=${activeModel} voice=${qwenVoice()} vad=${session.turn_detection.type} tools=${tools.length}`,
+    );
   }
 
   async function runPendingTools() {
@@ -362,8 +409,8 @@ export function createQwenSession(hooks = {}) {
         handshake = null;
         break;
       case 'input_audio_buffer.speech_started':
-        // smart_turn already drops the assistant turn. Extra response.cancel
-        // is what produced "Conversation has no active response".
+        // Audio smart_turn / Omni server_vad both drop the assistant turn.
+        // Extra response.cancel produced "Conversation has no active response".
         ignoreAudio = true;
         endAudio();
         responseActive = false;
@@ -450,6 +497,7 @@ export function createQwenSession(hooks = {}) {
   }
 
   async function connectOnce(model) {
+    refreshEnv();
     const key = qwenKey();
     const url = realtimeUrl(model);
     activeModel = model;
@@ -490,6 +538,12 @@ export function createQwenSession(hooks = {}) {
       };
     });
 
+    // Keep a handler on both from t0 — if close rejects `updated` while we only
+    // awaited `opened`, Node treats it as an unhandled rejection.
+    opened.catch(() => {});
+    updated.catch(() => {});
+    const readySession = Promise.all([opened, updated]);
+
     listen(socket, 'message', (msg) => {
       const raw = typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString('utf8');
       let event;
@@ -514,17 +568,20 @@ export function createQwenSession(hooks = {}) {
       endAudio();
       const pending = handshake;
       handshake = null;
-      pending?.reject(new Error(message));
-      if (!closing && !pending) emit('error', { text: message });
+      if (pending) {
+        pending.reject(new Error(message));
+      } else if (!closing) {
+        emit('error', { text: message });
+      }
     });
 
-    await opened;
-    await updated;
+    await readySession;
     capture.forget();
     return { ok: true, model, voice: qwenVoice() };
   }
 
   async function start() {
+    refreshEnv();
     if (ready && ws && ws.readyState === 1) return { ok: true, reused: true, model: activeModel, voice: qwenVoice() };
     if (connectPromise) return connectPromise;
 
@@ -554,9 +611,10 @@ export function createQwenSession(hooks = {}) {
         }
         ws = null;
         ready = false;
-        if (isQuotaExhausted(message) && wanted !== FLASH_MODEL) {
+        // Only fall back inside the Qwen-Audio family — Omni is a different product.
+        if (isQuotaExhausted(message) && isAudioRealtimeModel(wanted) && wanted !== FLASH_MODEL) {
           console.warn(`[qwen] ${wanted} quota exhausted — trying ${FLASH_MODEL}`);
-          return connectOnce(FLASH_MODEL);
+          return await connectOnce(FLASH_MODEL);
         }
         throw err;
       }

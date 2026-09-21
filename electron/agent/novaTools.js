@@ -11,11 +11,13 @@ import { extractFileArtifact, fileActionTool, isFileTool, runFileAction } from '
 import { isWebTool, runWebAction, webActionTool } from './webActions.js';
 import { isMusicTool, musicActionTool, runMusicAction } from './musicActions.js';
 import { boardActionTool, isBoardTool, runBoardAction } from './boardActions.js';
+import { isReminderTool, reminderToolDefs, runReminderTool } from './reminders.js';
 
 export async function listNovaTools() {
   const hub = await getMcpHub();
   return [
     ...novaLocalTools(),
+    ...reminderToolDefs(),
     ...hub.listOpenAiTools(),
     fileActionTool(),
     webActionTool(),
@@ -34,6 +36,8 @@ export async function listNovaTools() {
  */
 export async function executeNovaTool(name, args = {}, hooks = {}) {
   if (isNovaLocalTool(name)) return runNovaLocalTool(name, args);
+
+  if (isReminderTool(name)) return runReminderTool(name, args);
 
   if (isFileTool(name)) {
     const text = await runFileAction(args);

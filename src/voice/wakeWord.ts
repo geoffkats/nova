@@ -16,8 +16,53 @@ function normalize(text: string) {
 function looksLikeNova(word: string) {
   const w = String(word || '');
   if (!w) return false;
-  if (w === 'nova' || w === 'nava' || w === 'noah' || w === 'ova' || w === 'nover' || w === 'anova') return true;
-  if (w.length >= 3 && w.length <= 6 && /n[oa]v?a/.test(w)) return true;
+  // Exact / near-exact only — substring regex matched "innova", "renova", etc.
+  if (
+    w === 'nova' ||
+    w === 'nava' ||
+    w === 'noah' ||
+    w === 'ova' ||
+    w === 'nover' ||
+    w === 'anova' ||
+    w === 'enova' ||
+    w === 'heynova' ||
+    w === 'hinova'
+  ) {
+    return true;
+  }
+  if (w.length >= 3 && w.length <= 5 && /^(n[oa]va|nover)$/.test(w)) return true;
+  return false;
+}
+
+/** Skip Groq when the clip is too short/quiet (room tone, coughs, "mm"). */
+export function wakeAudioWorthSending(samples: Float32Array, sampleRate: number): boolean {
+  const rate = Math.max(1, sampleRate || 16000);
+  const seconds = samples.length / rate;
+  if (seconds < 0.5 || seconds > 4.2) return false;
+  let sum = 0;
+  let peak = 0;
+  const step = Math.max(1, Math.floor(samples.length / 4000));
+  let n = 0;
+  for (let i = 0; i < samples.length; i += step) {
+    const v = samples[i];
+    const a = Math.abs(v);
+    sum += v * v;
+    if (a > peak) peak = a;
+    n += 1;
+  }
+  const rms = Math.sqrt(sum / Math.max(1, n));
+  return rms >= 0.01 || peak >= 0.05;
+}
+
+const WAKE_FILLER =
+  /^(yeah|yes|yep|nah|no|nope|ok|okay|oh|ah|uh|um|hmm+|mm+|mmm+|huh|what|well|right|amen|sorry|quiet|and|the|a|i|you|dude|man|dear|wow|whoa)$/i;
+
+/** Whisper often returns these for noise — never worth treating as wake. */
+export function isWakeFiller(text: string): boolean {
+  const t = normalize(text);
+  if (!t) return true;
+  if (WAKE_FILLER.test(t)) return true;
+  if (t.split(' ').length === 1 && t.length <= 3) return true;
   return false;
 }
 
@@ -38,21 +83,44 @@ export function isWakePhrase(text: string): boolean {
   return false;
 }
 
+/** After a reminder nudge — user acknowledges and stays asleep. */
+export function isNudgeAck(text: string): boolean {
+  const t = normalize(text);
+  if (!t) return false;
+  if (isWakePhrase(t)) return false;
+  return /^(ok|okay|thanks|thank you|got it|cool|noted|alright|all right|sure|yep|yes|mm hmm|mhmm)(\s+.*)?$/.test(
+    t,
+  );
+}
+
+/** After a reminder nudge — open a real conversation. */
+export function isNudgeContinue(text: string): boolean {
+  const t = normalize(text);
+  if (!t) return false;
+  if (isWakePhrase(t)) return true;
+  if (/\b(tell me more|what is it|what's it|details|go on|continue|explain|about it)\b/.test(t)) {
+    return true;
+  }
+  if (/^(what|why|when|where|how)\b/.test(t) && t.split(' ').length >= 2) return true;
+  return false;
+}
+
 export function isSleepPhrase(text: string): boolean {
   const t = normalize(text);
   if (!t) return false;
   const saidSleep = /\b(sleep|slip|asleep|slept|night|bedtime)\b/.test(t);
   const saidNova = t.split(' ').some(looksLikeNova) || /\b(nova|nava|noah|ova|nover|enova)\b/.test(t);
-  // "sleep nova", "nova sleep", "okay slip nova"
   if (saidSleep && saidNova) return true;
   if (/^(okay|ok|hey)?\s*(sleep|slip)\s+(nova|nava|noah|ova|nover)\b/.test(t)) return true;
   if (/^(nova|nava|noah|ova|nover)\s+(go to )?(sleep|slip)\b/.test(t)) return true;
-  if (/\b(go to sleep|going to sleep|go back to sleep|good\s*night)\b/.test(t)) return true;
+  // Require Nova — bare "good night" is too easy from TV/chat.
+  if (/\b(go to sleep|going to sleep|go back to sleep)\b/.test(t) && saidNova) return true;
+  if (/\bgood\s*night\b/.test(t) && saidNova) return true;
   if (/\b(goodbye|good bye|bye)\s+(nova|nava|noah|ova|nover)\b/.test(t)) return true;
   if (/\b(stop listening|power down|shut down|go offline|that'?s all|we are done|we'?re done)\b/.test(t) && saidNova) {
     return true;
   }
-  if (/\byou can (go|rest|sleep)\b/.test(t)) return true;
+  if (/\byou can (go|rest|sleep)\b/.test(t) && saidNova) return true;
   return false;
 }
 

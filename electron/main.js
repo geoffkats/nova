@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { converse, resetConversation } from './brain/converse.js';
 import { ollamaReady } from './brain/ollama.js';
+import { synthesize, elevenLabsBlocked } from './brain/elevenlabs.js';
 import { cancelKokoro, ensureKokoro, kokoroDevice, kokoroReady } from './brain/kokoro.js';
 import { transcribeGroq } from './brain/groq.js';
 import { encodeWav } from './brain/wav.js';
@@ -24,9 +25,15 @@ import { showNovaBoard, hideNovaBoard, wireBoardIpc } from './boardWindow.js';
 import { getMcpHub } from './agent/mcpHub.js';
 import { hasGmailCredentials, hasGmailTokens } from './agent/gmailOAuth.js';
 import { hasGwsToken } from './agent/gwsPaths.js';
+import {
+  addReminder,
+  listReminders,
+  startReminderScheduler,
+  stopReminderScheduler,
+} from './agent/reminders.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-loadEnv({ path: join(here, '../.env') });
+loadEnv({ path: join(here, '../.env'), override: true });
 
 const isDev = process.argv.includes('--dev');
 const devServer = process.env.VITE_DEV_SERVER_URL ?? 'http://127.0.0.1:5173';
@@ -286,6 +293,54 @@ app.whenReady().then(() => {
   });
   shutdownQwen = () => qwen.stop();
 
+  startReminderScheduler((nudge) => {
+    console.log(`[remind] nudge → ${nudge.text}`);
+    sendToRenderer('avatar:nudge', nudge);
+  });
+
+  ipcMain.handle('avatar:reminders-list', () => ({
+    ok: true,
+    reminders: listReminders().map((r) => ({
+      id: r.id,
+      text: r.text,
+      at: r.at,
+      when: new Date(r.at).toLocaleString(),
+      label: r.label,
+    })),
+  }));
+
+  ipcMain.handle('avatar:reminders-add', (_event, args) => addReminder(args || {}));
+
+  ipcMain.handle('avatar:speak-line', async (_event, text) => {
+    const spoken = String(text || '')
+      .replace(/\p{Extended_Pictographic}/gu, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .slice(0, 480);
+    if (!spoken) return { ok: false, error: 'empty' };
+    const cfg = brainConfig();
+    if (cfg.elevenKey && !elevenLabsBlocked()) {
+      try {
+        const audio = await synthesize({
+          apiKey: cfg.elevenKey,
+          voiceId: cfg.voiceId,
+          modelId: cfg.ttsModel,
+          text: spoken,
+          clean: true,
+        });
+        return {
+          ok: true,
+          tts: 'elevenlabs',
+          mime: 'audio/mpeg',
+          audio: Buffer.from(audio),
+        };
+      } catch (err) {
+        console.warn('[tts] speak-line elevenlabs:', err instanceof Error ? err.message : err);
+      }
+    }
+    return { ok: false, tts: 'local' };
+  });
+
   function interruptTts() {
     ttsEpoch += 1;
     cancelKokoro();
@@ -524,6 +579,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopReminderScheduler();
   shutdownQwen();
   if (process.platform !== 'darwin') app.quit();
 });

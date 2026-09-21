@@ -72,4 +72,12 @@ contextBridge.exposeInMainWorld('avatarHost', {
   showBoard: () => ipcRenderer.invoke('avatar:board-show'),
   openUrl: (url) => ipcRenderer.invoke('avatar:open-url', url),
   dismissArtifact: () => ipcRenderer.send('avatar:dismiss-artifact'),
+  speakLine: (text) => ipcRenderer.invoke('avatar:speak-line', text),
+  listReminders: () => ipcRenderer.invoke('avatar:reminders-list'),
+  addReminder: (args) => ipcRenderer.invoke('avatar:reminders-add', args),
+  onNudge: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('avatar:nudge', handler);
+    return () => ipcRenderer.removeListener('avatar:nudge', handler);
+  },
 });
