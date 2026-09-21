@@ -86,10 +86,10 @@ export function HolographicBrows({ stateRef }: Props) {
   const left = useMemo(() => makeBrowMaterial(-1), []);
   const right = useMemo(() => makeBrowMaterial(1), []);
   const placement = useMemo(() => {
-    const l = facePoint(-0.35, 0.3);
-    const r = facePoint(0.35, 0.3);
-    l.z += 0.05;
-    r.z += 0.05;
+    const l = facePoint(-0.34, 0.295);
+    const r = facePoint(0.36, 0.305);
+    l.z += 0.042;
+    r.z += 0.04;
     return { l, r };
   }, []);
 

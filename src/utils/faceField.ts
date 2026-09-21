@@ -21,39 +21,54 @@ const g2 = (x: number, y: number, cx: number, cy: number, sx: number, sy: number
 
 /** Forward (z) relief of the face at normalised coordinates. */
 function relief(fx: number, fy: number): number {
-  const ax = Math.abs(fx);
+  // Mild baked asymmetry so the face doesn't read as a perfect mirror.
+  const fxA = fx + 0.018;
+  const ax = Math.abs(fxA);
   let d = 0;
 
-  // Forehead & brow ridge
-  d += 0.035 * g2(fx, fy, 0, 0.62, 0.5, 0.2);
-  d += 0.05 * g2(fx, fy, 0, 0.3, 0.42, 0.055);
+  // Forehead plate (soft) + strong brow shelf that interrupts the dome.
+  d += 0.02 * g2(fxA, fy, 0, 0.65, 0.48, 0.18);
+  d += 0.085 * g2(fxA, fy, 0, 0.31, 0.4, 0.048); // brow ridge
+  d += 0.03 * g2(ax, fy, 0.28, 0.28, 0.1, 0.04); // brow peaks
 
-  // Eye sockets & temples
-  d -= 0.16 * g2(ax, fy, 0.34, 0.13, 0.12, 0.08);
-  d -= 0.035 * g2(ax, fy, 0.68, 0.3, 0.1, 0.15);
+  // Eye sockets — deeper wells so irises feel seated.
+  d -= 0.22 * g2(ax, fy, 0.34, 0.13, 0.115, 0.075);
+  d -= 0.05 * g2(ax, fy, 0.34, 0.05, 0.14, 0.05); // infraorbital shelf
+  d -= 0.04 * g2(ax, fy, 0.7, 0.28, 0.1, 0.14); // temples
 
-  // Nose: bridge → tip, then under-tip drop, plus alar wings
+  // Nose: bridge ridge → tip, under-tip drop, alar wings
   const ramp = smooth(0.22, -0.2, fy);
   const drop = 1 - smooth(-0.2, -0.3, fy);
-  const width = 0.045 + 0.06 * smooth(0.1, -0.24, fy);
+  const width = 0.04 + 0.055 * smooth(0.1, -0.24, fy);
   d +=
-    (0.03 + 0.21 * ramp * ramp) *
+    (0.035 + 0.26 * ramp * ramp) *
     drop *
-    Math.exp(-(fx * fx) / (2 * width * width)) *
-    smooth(0.36, 0.2, fy);
-  d += 0.045 * g2(ax, fy, 0.1, -0.24, 0.045, 0.035);
+    Math.exp(-(fxA * fxA) / (2 * width * width)) *
+    smooth(0.38, 0.18, fy);
+  // Sharp bridge crest (helps topo contours catch the ridge head-on).
+  d += 0.04 * Math.exp(-(fxA * fxA) / (2 * 0.018 * 0.018)) * smooth(0.28, -0.05, fy) * smooth(-0.28, 0.05, fy);
+  d += 0.055 * g2(ax, fy, 0.1, -0.24, 0.042, 0.032); // alae
+  d -= 0.025 * g2(fxA, fy, 0, -0.28, 0.06, 0.025); // under-tip notch
+
+  // Nasolabial folds — midface clarity (biggest anti-mush).
+  d -= 0.045 * g2(ax, fy, 0.22, -0.32, 0.055, 0.12);
+  d -= 0.028 * g2(ax, fy, 0.28, -0.22, 0.05, 0.08);
 
   // Philtrum, lips, mouth seam, mental groove, chin
-  d -= 0.02 * g2(fx, fy, 0, -0.34, 0.1, 0.035);
-  d += 0.05 * g2(fx, fy, 0, -0.415, 0.17, 0.032);
-  d -= 0.035 * g2(fx, fy, 0, -0.463, 0.19, 0.011);
-  d += 0.045 * g2(fx, fy, 0, -0.51, 0.15, 0.032);
-  d -= 0.02 * g2(fx, fy, 0, -0.6, 0.13, 0.03);
-  d += 0.09 * g2(fx, fy, 0, -0.76, 0.16, 0.08);
+  d -= 0.028 * g2(fxA, fy, 0, -0.34, 0.055, 0.04); // philtrum trench
+  d += 0.06 * g2(fxA, fy, 0, -0.412, 0.16, 0.03); // upper lip
+  d -= 0.04 * g2(fxA, fy, 0, -0.463, 0.18, 0.01); // seam
+  d += 0.055 * g2(fxA, fy, 0, -0.512, 0.15, 0.03); // lower lip
+  d -= 0.025 * g2(fxA, fy, 0, -0.6, 0.12, 0.028); // mental groove
+  d += 0.1 * g2(fxA, fy, 0, -0.76, 0.15, 0.075); // chin pad
 
-  // Cheekbones & cheek hollows
-  d += 0.08 * g2(ax, fy, 0.5, -0.02, 0.12, 0.09);
-  d -= 0.03 * g2(ax, fy, 0.47, -0.36, 0.12, 0.12);
+  // Cheekbones up, hollows below — planes of the face.
+  d += 0.1 * g2(ax, fy, 0.48, -0.0, 0.11, 0.08);
+  d -= 0.055 * g2(ax, fy, 0.42, -0.38, 0.13, 0.11);
+
+  // Mandible corner / jaw angle (reads from ¾ view).
+  d += 0.06 * g2(ax, fy, 0.58, -0.55, 0.08, 0.07);
+  d += 0.035 * g2(ax, fy, 0.52, -0.68, 0.09, 0.06);
 
   return d;
 }
@@ -76,8 +91,10 @@ export function headPoint(u: number, v: number, out = new THREE.Vector3()): THRE
   const crown = smooth(0.55, 1.0, fy);
   const jaw = smooth(-0.3, -1.0, fy);
   const chinSquare = smooth(-0.78, -1.0, fy);
+  const jawAngle = g2(Math.abs(fx), fy, 0.55, -0.58, 0.12, 0.1);
   // Ellipsoid already narrows toward the pole; counter it near the chin so the jaw stays broad.
-  x *= (1 - 0.2 * Math.pow(jaw, 1.3)) * (1 + 0.2 * chinSquare) * (1 - 0.05 * crown);
+  x *= (1 - 0.18 * Math.pow(jaw, 1.3)) * (1 + 0.22 * chinSquare) * (1 - 0.05 * crown);
+  x *= 1 + 0.04 * jawAngle; // flare at mandible corners
   if (z < 0) {
     z *= fy > 0 ? 1.1 : 1 - 0.55 * jaw;
   }
@@ -184,14 +201,16 @@ export function featureWeight(u: number, v: number): number {
   const front = smooth(-0.2, 0.9, Math.cos(u));
   // Sparse cheeks / crown — density lives on eyes, mouth, brow, jaw silhouette.
   let w = 0.02 + 0.1 * front;
-  w += 1.35 * g2(ax, fy, 0.35, 0.14, 0.11, 0.075) * front; // eyes
-  w += 0.55 * g2(fx, fy, 0, -0.05, 0.06, 0.2) * front; // nose bridge
-  w += 1.4 * g2(fx, fy, 0, -0.46, 0.18, 0.065) * front; // mouth
-  w += 0.22 * g2(ax, fy, 0.5, -0.02, 0.11, 0.09) * front; // cheekbones (light)
+  w += 1.45 * g2(ax, fy, 0.35, 0.14, 0.11, 0.075) * front; // eyes
+  w += 0.7 * g2(fx, fy, 0, -0.05, 0.055, 0.2) * front; // nose bridge
+  w += 1.45 * g2(fx, fy, 0, -0.46, 0.17, 0.06) * front; // mouth
+  w += 0.35 * g2(ax, fy, 0.22, -0.32, 0.06, 0.1) * front; // nasolabial
+  w += 0.18 * g2(ax, fy, 0.5, -0.02, 0.11, 0.09) * front; // cheekbones (light)
   w += 0.55 * g2(fx, fy, 0, -0.75, 0.18, 0.075) * front; // chin
-  w += 0.7 * g2(fx, fy, 0, 0.3, 0.42, 0.055) * front; // brow
-  w += 0.85 * smooth(0.52, 0.88, ax) * smooth(0.05, -0.55, fy) * front; // jawline
+  w += 0.95 * g2(fx, fy, 0, 0.31, 0.4, 0.05) * front; // brow shelf
+  w += 0.95 * smooth(0.5, 0.9, ax) * smooth(0.05, -0.6, fy) * front; // jawline
+  w += 0.4 * g2(ax, fy, 0.58, -0.55, 0.08, 0.07) * front; // jaw angle
   // Soften forehead / temples so they don't fill into a solid plate.
-  w *= 1 - 0.45 * smooth(0.45, 0.95, fy) * front;
+  w *= 1 - 0.5 * smooth(0.48, 0.95, fy) * front;
   return w;
 }

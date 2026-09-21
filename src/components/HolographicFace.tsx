@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import vert from '../shaders/hologram.vert?raw';
 import frag from '../shaders/hologram.frag?raw';
 import { buildHeadLattice, buildHeadSurface } from '../utils/faceField';
+
+/** Bump when faceField sculpt changes so surface/lattice remesh on HMR. */
+const FACE_SCULPT = 3;
 import type { AvatarState } from '../hooks/useAvatarAnimation';
 import { HOLO_CYAN, HOLO_WHITE } from './palette';
 import type { Quality } from '../quality';
@@ -41,11 +44,11 @@ function createHologramMaterial(lineMode: number) {
 export function HolographicFace({ stateRef, quality }: Props) {
   const surfaceGeo = useMemo(
     () => (quality.tier === 'low' ? buildHeadSurface(110, 96) : buildHeadSurface(180, 150)),
-    [quality.tier],
+    [quality.tier, FACE_SCULPT],
   );
   const latticeGeo = useMemo(
     () => (quality.tier === 'low' ? buildHeadLattice(22, 22, 90) : buildHeadLattice(30, 30, 150)),
-    [quality.tier],
+    [quality.tier, FACE_SCULPT],
   );
   const surfaceMat = useMemo(() => createHologramMaterial(0), []);
   const latticeMat = useMemo(() => createHologramMaterial(1), []);

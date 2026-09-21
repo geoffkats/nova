@@ -71,16 +71,21 @@ void main() {
   vec3 col = uColor * irisLight * uGlow + uHighlight * (pupil * 0.9 + glint * 0.6) * uGlow;
   float a = (irisLight * 0.9 + pupil + glint) * aperture;
 
-  // Socket ambience visible through the aperture.
-  float ambient = aperture * 0.1;
+  col += uColor * lids * 1.15;
+  a += lids;
+
+  // Socket ambience — darker well so the iris sits in a recess, not on the skin.
+  float ambient = aperture * 0.045;
   col += uColor * ambient;
   a += ambient;
 
-  col += uColor * lids * 1.1;
-  a += lids;
+  // Soft orbital rim (socket edge) — reads depth without solid mesh.
+  float rim = exp(-pow((length(q) - 0.55) * 14.0, 2.0)) * 0.22 * corners * (0.55 + 0.45 * open);
+  col += uColor * rim;
+  a += rim;
 
   // Soft halo around the eye, hidden when blinking.
-  float halo = exp(-length(q) * 5.0) * 0.12 * open * corners;
+  float halo = exp(-length(q) * 5.0) * 0.09 * open * corners;
   col += uColor * halo;
   a += halo;
 
@@ -116,10 +121,11 @@ export function HolographicEyes({ stateRef }: Props) {
   const left = useMemo(() => makeEyeMaterial(-1), []);
   const right = useMemo(() => makeEyeMaterial(1), []);
   const placement = useMemo(() => {
-    const l = facePoint(-0.35, 0.14);
-    const r = facePoint(0.35, 0.14);
-    l.z += 0.09;
-    r.z += 0.09;
+    // Seat deeper in the sockets; slight asymmetry so the face isn't a mirror.
+    const l = facePoint(-0.34, 0.135);
+    const r = facePoint(0.355, 0.142);
+    l.z += 0.038;
+    r.z += 0.036;
     return { l, r };
   }, []);
 

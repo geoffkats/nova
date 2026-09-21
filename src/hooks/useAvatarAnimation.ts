@@ -190,18 +190,36 @@ export function useAvatarAnimation({
       s.speech = r.speechEnv * syllables * s.settle;
     }
 
-    // Mouth DOF from one envelope: jaw (slow), aperture (fast), width (ee↔oo),
-    // plus a short consonant burst on rising edges so lips aren't a single slider.
+    // Mouth DOF: envelope + light viseme cycling while speaking (A/E/O/U/closed).
     {
       const level = s.speech;
       const rising = Math.max(0, level - r.speechPrev);
       r.speechPrev = level;
       r.consonantBurst = THREE.MathUtils.damp(r.consonantBurst, rising * 4.5, 28, dt);
 
-      const jawTarget = Math.pow(THREE.MathUtils.clamp(level * 1.15, 0, 1), 0.85);
-      const apTarget = THREE.MathUtils.clamp(level * 1.35 + r.consonantBurst * 0.55, 0, 1);
-      // Louder / more open → slightly wider (ah); softer → a touch narrower (oo).
-      const widthTarget = THREE.MathUtils.clamp(0.78 + jawTarget * 0.28 - apTarget * 0.08, 0.62, 1.08);
+      // Viseme weights from syllable phase — not phoneme-perfect, but human rhythm.
+      const phase = t * (7.2 + level * 3.5);
+      const wA = Math.max(0, Math.sin(phase));
+      const wE = Math.max(0, Math.sin(phase * 1.37 + 1.1));
+      const wO = Math.max(0, Math.sin(phase * 0.91 + 2.2));
+      const wU = Math.max(0, Math.sin(phase * 1.63 + 0.4));
+      const wSum = wA + wE + wO + wU + 0.15;
+      // A/ah, E/ee, O/oh, U/oo → jaw, aperture, width
+      const vJaw = (wA * 0.9 + wE * 0.28 + wO * 0.58 + wU * 0.22) / wSum;
+      const vAp = (wA * 0.72 + wE * 0.48 + wO * 0.52 + wU * 0.38) / wSum;
+      const vWidth = (wA * 1.06 + wE * 1.14 + wO * 0.74 + wU * 0.58) / wSum;
+
+      const speakGate = THREE.MathUtils.smoothstep(level, 0.04, 0.22);
+      const jawTarget = Math.pow(THREE.MathUtils.clamp(level * 1.05, 0, 1), 0.85) * (0.35 + 0.65 * vJaw);
+      let apTarget = THREE.MathUtils.clamp(level * 1.25 + r.consonantBurst * 0.55, 0, 1);
+      apTarget = THREE.MathUtils.lerp(apTarget, vAp * level * 1.2, speakGate * 0.75);
+      // Consonant snaps aperture down briefly.
+      apTarget *= 1 - Math.min(1, r.consonantBurst * 0.35);
+      const widthTarget = THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(0.92, vWidth, speakGate),
+        0.58,
+        1.14,
+      );
 
       const jawLambda = level > r.mouthJaw ? 7 : 4.5;
       const apLambda = level > r.mouthAperture ? 22 : 11;
@@ -209,7 +227,6 @@ export function useAvatarAnimation({
       r.mouthAperture = THREE.MathUtils.damp(r.mouthAperture, apTarget, apLambda, dt);
       r.mouthWidth = THREE.MathUtils.damp(r.mouthWidth, widthTarget, 10, dt);
 
-      // Micro rest parting on breath when idle.
       const breathPart = Math.max(s.breath, 0) * 0.03 * (1 - speaking);
       s.mouthJaw = THREE.MathUtils.clamp(r.mouthJaw + breathPart * 0.35, 0, 1);
       s.mouthAperture = THREE.MathUtils.clamp(r.mouthAperture + breathPart, 0, 1);
@@ -234,11 +251,13 @@ export function useAvatarAnimation({
       head.rotation.x =
         (0.018 * Math.sin(t * 0.19 + 0.7) + s.breath * 0.006) * idle - r.mouse.y * 0.08;
       head.rotation.z = r.tilt * idle + 0.004 * Math.sin(t * 0.43) * idle;
-      head.position.y = 0.06 + (s.breath * 0.012 + 0.005 * Math.sin(t * 0.37)) * idle;
+      head.position.y = 0.06 + (s.breath * 0.012 + 0.005 * Math.sin(t * 0.37)) * idle - s.mouthJaw * 0.012;
       // Settle from a tiny forward drift during formation.
       head.position.z = (1 - s.settle) * -0.15;
       const sc = 1 + s.breath * 0.004 * idle;
       head.scale.setScalar(sc);
+      // Slight chin-down as jaw opens — sells speech without remeshing.
+      head.rotation.x += s.mouthJaw * 0.04;
     }
 
     // Camera parallax — very slight.
