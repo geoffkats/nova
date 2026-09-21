@@ -23,6 +23,10 @@ export interface AvatarState {
   converge: number;
   blink: number;
   speech: number;
+  /** Mouth DOF — jaw (slow), lip aperture (fast), width (ee↔oo). 0–1. */
+  mouthJaw: number;
+  mouthAperture: number;
+  mouthWidth: number;
   /** Rare burst signal, 0.08 at rest and 1 during a glitch. */
   glitch: number;
   /** Behaviour mode weights, each 0 → 1. Crossfade on a mode change. */
@@ -52,6 +56,9 @@ export const createAvatarState = (): AvatarState => ({
   converge: 0,
   blink: 0,
   speech: 0,
+  mouthJaw: 0,
+  mouthAperture: 0,
+  mouthWidth: 1,
   glitch: 0,
   modes: { idle: 1, listening: 0, thinking: 0, speaking: 0 },
   listen: 0,
@@ -104,6 +111,11 @@ export function useAvatarAnimation({
     nextPulse: 7,
     pulseStart: -100,
     speechEnv: 0,
+    mouthJaw: 0,
+    mouthAperture: 0,
+    mouthWidth: 1,
+    speechPrev: 0,
+    consonantBurst: 0,
   });
 
   useFrame(({ pointer, camera }, rawDelta) => {
@@ -170,14 +182,38 @@ export function useAvatarAnimation({
     } else {
       // Simulated: the speaking mode itself decides when she talks, so the
       // envelope follows that weight and the syllable pattern only shapes it.
-      // An independent phrase schedule here would leave her mouth still when
-      // the mode says she is mid-reply.
       r.speechEnv = THREE.MathUtils.damp(r.speechEnv, speaking, 8, dt);
       const syllables =
         Math.abs(Math.sin(t * 9.1)) * 0.55 +
         Math.abs(Math.sin(t * 13.7 + 1.3)) * 0.3 +
         Math.abs(Math.sin(t * 4.3 + 0.4)) * 0.15;
       s.speech = r.speechEnv * syllables * s.settle;
+    }
+
+    // Mouth DOF from one envelope: jaw (slow), aperture (fast), width (ee↔oo),
+    // plus a short consonant burst on rising edges so lips aren't a single slider.
+    {
+      const level = s.speech;
+      const rising = Math.max(0, level - r.speechPrev);
+      r.speechPrev = level;
+      r.consonantBurst = THREE.MathUtils.damp(r.consonantBurst, rising * 4.5, 28, dt);
+
+      const jawTarget = Math.pow(THREE.MathUtils.clamp(level * 1.15, 0, 1), 0.85);
+      const apTarget = THREE.MathUtils.clamp(level * 1.35 + r.consonantBurst * 0.55, 0, 1);
+      // Louder / more open → slightly wider (ah); softer → a touch narrower (oo).
+      const widthTarget = THREE.MathUtils.clamp(0.78 + jawTarget * 0.28 - apTarget * 0.08, 0.62, 1.08);
+
+      const jawLambda = level > r.mouthJaw ? 7 : 4.5;
+      const apLambda = level > r.mouthAperture ? 22 : 11;
+      r.mouthJaw = THREE.MathUtils.damp(r.mouthJaw, jawTarget, jawLambda, dt);
+      r.mouthAperture = THREE.MathUtils.damp(r.mouthAperture, apTarget, apLambda, dt);
+      r.mouthWidth = THREE.MathUtils.damp(r.mouthWidth, widthTarget, 10, dt);
+
+      // Micro rest parting on breath when idle.
+      const breathPart = Math.max(s.breath, 0) * 0.03 * (1 - speaking);
+      s.mouthJaw = THREE.MathUtils.clamp(r.mouthJaw + breathPart * 0.35, 0, 1);
+      s.mouthAperture = THREE.MathUtils.clamp(r.mouthAperture + breathPart, 0, 1);
+      s.mouthWidth = r.mouthWidth;
     }
 
     // Occasional slight head tilt.

@@ -190,7 +190,8 @@ function buildFaceParticles(count: number) {
     const u = THREE.MathUtils.lerp(U_RANGE[0], U_RANGE[1], Math.random());
     // area-uniform latitude
     const v = Math.asin(THREE.MathUtils.lerp(Math.sin(V_RANGE[0]), Math.sin(V_RANGE[1]), Math.random()));
-    if (Math.random() * 1.6 > featureWeight(u, v)) continue;
+    // Stronger feature gate: cheeks / crown reject more often.
+    if (Math.random() * 1.35 > featureWeight(u, v)) continue;
 
     headPoint(u, v, p);
     headNormal(u, v, n);
@@ -262,8 +263,8 @@ export function AvatarParticles({ stateRef, quality }: Props) {
 
   const faceGeo = useMemo(() => buildFaceParticles(quality.faceParticles), [quality.faceParticles]);
   const haloGeo = useMemo(() => buildHalo(quality.haloParticles), [quality.haloParticles]);
-  const faceMat = useMemo(() => pointsMaterial(faceVert, 13, 0.95), []);
-  const haloMat = useMemo(() => pointsMaterial(haloVert, 12, 0.85), []);
+  const faceMat = useMemo(() => pointsMaterial(faceVert, 14.5, 0.95), []);
+  const haloMat = useMemo(() => pointsMaterial(haloVert, 11, 0.78), []);
 
   useEffect(() => () => faceGeo.dispose(), [faceGeo]);
   useEffect(() => () => haloGeo.dispose(), [haloGeo]);

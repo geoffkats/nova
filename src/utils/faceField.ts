@@ -182,13 +182,16 @@ export function featureWeight(u: number, v: number): number {
   const fy = Math.sin(v);
   const ax = Math.abs(fx);
   const front = smooth(-0.2, 0.9, Math.cos(u));
-  let w = 0.07 + 0.28 * front;
-  w += 0.9 * g2(ax, fy, 0.35, 0.14, 0.12, 0.08) * front; // eyes
-  w += 0.8 * g2(fx, fy, 0, -0.05, 0.07, 0.22) * front; // nose
-  w += 0.9 * g2(fx, fy, 0, -0.46, 0.2, 0.07) * front; // mouth
-  w += 0.4 * g2(ax, fy, 0.5, -0.02, 0.12, 0.1) * front; // cheekbones
-  w += 0.4 * g2(fx, fy, 0, -0.75, 0.2, 0.08) * front; // chin
-  w += 0.35 * g2(fx, fy, 0, 0.3, 0.45, 0.06) * front; // brow
-  w += 0.5 * smooth(0.55, 0.85, ax) * smooth(0.0, -0.5, fy) * front; // jawline silhouette
+  // Sparse cheeks / crown — density lives on eyes, mouth, brow, jaw silhouette.
+  let w = 0.02 + 0.1 * front;
+  w += 1.35 * g2(ax, fy, 0.35, 0.14, 0.11, 0.075) * front; // eyes
+  w += 0.55 * g2(fx, fy, 0, -0.05, 0.06, 0.2) * front; // nose bridge
+  w += 1.4 * g2(fx, fy, 0, -0.46, 0.18, 0.065) * front; // mouth
+  w += 0.22 * g2(ax, fy, 0.5, -0.02, 0.11, 0.09) * front; // cheekbones (light)
+  w += 0.55 * g2(fx, fy, 0, -0.75, 0.18, 0.075) * front; // chin
+  w += 0.7 * g2(fx, fy, 0, 0.3, 0.42, 0.055) * front; // brow
+  w += 0.85 * smooth(0.52, 0.88, ax) * smooth(0.05, -0.55, fy) * front; // jawline
+  // Soften forehead / temples so they don't fill into a solid plate.
+  w *= 1 - 0.45 * smooth(0.45, 0.95, fy) * front;
   return w;
 }

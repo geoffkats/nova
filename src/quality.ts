@@ -10,9 +10,32 @@ export interface Quality {
 }
 
 export const QUALITY: Record<QualityTier, Quality> = {
-  high: { tier: 'high', faceParticles: 16000, haloParticles: 2600, dustParticles: 900, dpr: [1, 2], multisampling: 4 },
-  medium: { tier: 'medium', faceParticles: 9500, haloParticles: 1600, dustParticles: 600, dpr: [1, 1.5], multisampling: 0 },
-  low: { tier: 'low', faceParticles: 4800, haloParticles: 800, dustParticles: 300, dpr: [0.75, 1], multisampling: 0 },
+  // High = recording / flex — denser than medium, not a solid fill.
+  high: {
+    tier: 'high',
+    faceParticles: 11000,
+    haloParticles: 1400,
+    dustParticles: 420,
+    dpr: [1, 2],
+    multisampling: 4,
+  },
+  // Everyday Nova — sharp silhouette, less mush.
+  medium: {
+    tier: 'medium',
+    faceParticles: 7800,
+    haloParticles: 1100,
+    dustParticles: 320,
+    dpr: [1, 1.5],
+    multisampling: 0,
+  },
+  low: {
+    tier: 'low',
+    faceParticles: 4200,
+    haloParticles: 700,
+    dustParticles: 220,
+    dpr: [0.75, 1],
+    multisampling: 0,
+  },
 };
 
 /** Heuristic starting tier; PerformanceMonitor can still step it down at runtime. */
