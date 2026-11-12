@@ -735,10 +735,13 @@ export default function App() {
 
   return (
     <div className={`stage${isBrowserDemo ? ' stage--web-demo' : ''}`} data-capture={captureMode || undefined}>
+      {/* Temporary greeting for Poni; remove after the demo. */}
+      <div className="stage__temporary-greeting" aria-hidden="true">Hello Poni</div>
       <Canvas
+        className="stage__canvas"
         dpr={quality.dpr}
         camera={{ fov: 31, near: 0.1, far: 50, position: [0, 0, 5.6] }}
-        gl={{ antialias: false, alpha: false, powerPreference: 'high-performance' }}
+        gl={{ antialias: false, alpha: true, powerPreference: 'high-performance' }}
         aria-label="Nova holographic face"
       >
         <PerformanceMonitor
