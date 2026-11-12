@@ -158,7 +158,13 @@ export function HolographicEyes({ stateRef }: Props) {
     const wander = 1 - Math.min(listening + thinking, 1);
     const awayX = Math.sin(s.time * 0.31) * 0.5 - 0.35;
     const awayY = 0.42 + Math.sin(s.time * 0.23 + 1.1) * 0.12;
-    look.set(sc.current.x * wander + awayX * thinking, sc.current.y * wander + awayY * thinking);
+    const idleLookX = sc.current.x * wander + awayX * thinking;
+    const idleLookY = sc.current.y * wander + awayY * thinking;
+    const gazeFollow = s.presenceWeight * 0.82;
+    look.set(
+      THREE.MathUtils.lerp(idleLookX, s.presenceLookX, gazeFollow),
+      THREE.MathUtils.lerp(idleLookY, s.presenceLookY, gazeFollow),
+    );
 
     // Glow breathes slowly and flares briefly while "speaking".
     const glow =
@@ -167,9 +173,13 @@ export function HolographicEyes({ stateRef }: Props) {
     // Eye activation: brief over-bright ignition, then settle.
     const ignite = s.eyes * (1 + 0.6 * Math.sin(Math.min(s.eyes, 1) * Math.PI));
 
-    for (const m of [left, right]) {
+    const baseBlink = s.eyes < 1 ? 1 - s.eyes : s.blink;
+    for (const [m, trackedBlink] of [
+      [left, s.presenceBlinkRight],
+      [right, s.presenceBlinkLeft],
+    ] as const) {
       m.uniforms.uTime.value = s.time;
-      m.uniforms.uBlink.value = s.eyes < 1 ? 1 - s.eyes : s.blink;
+      m.uniforms.uBlink.value = Math.max(baseBlink, trackedBlink * s.presenceWeight);
       m.uniforms.uActive.value = ignite;
       m.uniforms.uGlow.value = glow;
       (m.uniforms.uLook.value as THREE.Vector2).copy(look);

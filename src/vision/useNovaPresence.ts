@@ -5,6 +5,13 @@ export interface PresencePose {
   yaw: number;
   pitch: number;
   roll: number;
+  lookX: number;
+  lookY: number;
+  blinkLeft: number;
+  blinkRight: number;
+  jawOpen: number;
+  smile: number;
+  mouthRound: number;
 }
 
 export type PresenceStatus = 'off' | 'requesting' | 'loading' | 'waiting' | 'tracking' | 'error';
@@ -15,7 +22,11 @@ interface WorkerReply {
   message?: string;
 }
 
-const EMPTY_POSE: PresencePose = { active: false, yaw: 0, pitch: 0, roll: 0 };
+const EMPTY_POSE: PresencePose = {
+  active: false, yaw: 0, pitch: 0, roll: 0,
+  lookX: 0, lookY: 0, blinkLeft: 0, blinkRight: 0,
+  jawOpen: 0, smile: 0, mouthRound: 0,
+};
 const BASE_URL = import.meta.env.BASE_URL;
 
 export function useNovaPresence(): {

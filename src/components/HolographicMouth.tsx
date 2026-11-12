@@ -28,6 +28,7 @@ uniform float uJaw;
 uniform float uAperture;
 uniform float uWidth;
 uniform float uRound;
+uniform float uSmile;
 uniform float uActive;
 uniform float uBreath;
 uniform vec3 uColor;
@@ -44,7 +45,8 @@ void main() {
   float shape = sqrt(max(1.0 - pow(x / 0.9, 2.0), 0.0));
   float jaw = clamp(uJaw, 0.0, 1.0);
   float open = clamp(jaw * 0.82 + uAperture * 0.96, 0.0, 1.0);
-  float seam = -0.035 + uBreath * 0.01;
+  // Lift the corners into a small smile while keeping the centre relaxed.
+  float seam = -0.035 + uBreath * 0.01 + clamp(uSmile, 0.0, 1.0) * 0.055 * smoothstep(0.04, 0.82, x);
 
   // A soft cupid's bow and a fuller, lower lip give the mouth a real silhouette.
   float cupid = 0.026 * exp(-pow((x - 0.23) * 8.0, 2.0)) - 0.014 * exp(-pow(x * 14.0, 2.0));
@@ -105,6 +107,7 @@ export function HolographicMouth({ stateRef }: Props) {
           uAperture: { value: 0 },
           uWidth: { value: 1 },
           uRound: { value: 0 },
+          uSmile: { value: 0 },
           uActive: { value: 0 },
           uBreath: { value: 0 },
           uColor: { value: HOLO_CYAN.clone() },
@@ -130,6 +133,7 @@ export function HolographicMouth({ stateRef }: Props) {
     u.uAperture.value = s.mouthAperture;
     u.uWidth.value = s.mouthWidth;
     u.uRound.value = s.mouthRoundness;
+    u.uSmile.value = s.mouthSmile;
     u.uBreath.value = s.breath;
     u.uActive.value = THREE.MathUtils.smoothstep(s.surface, 0.55, 1.0) * 0.92;
 

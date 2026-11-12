@@ -27,6 +27,7 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
         minFaceDetectionConfidence: 0.55,
         minFacePresenceConfidence: 0.55,
         minTrackingConfidence: 0.55,
+        outputFaceBlendshapes: true,
       });
       self.postMessage({ type: 'ready' });
     } catch (cause) {
@@ -61,6 +62,22 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
     const rawPitch = clamp(((nose.y - eyeCenterY) / eyeWidth - 0.58) * 1.1, -0.36, 0.36);
     const rawRoll = clamp(-Math.atan2(eyeB.y - eyeA.y, eyeB.x - eyeA.x), -0.3, 0.3);
 
+    const categories = result.faceBlendshapes[0]?.categories ?? [];
+    const blendshape = (name: string) => categories.find((item) => item.categoryName === name)?.score ?? 0;
+    // Convert the two subject-side eye signals into one screen-space gaze.
+    const lookX = clamp(
+      (blendshape('eyeLookOutLeft') + blendshape('eyeLookInRight') -
+        blendshape('eyeLookInLeft') - blendshape('eyeLookOutRight')) * 0.5,
+      -1,
+      1,
+    );
+    const lookY = clamp(
+      (blendshape('eyeLookUpLeft') + blendshape('eyeLookUpRight') -
+        blendshape('eyeLookDownLeft') - blendshape('eyeLookDownRight')) * 0.5,
+      -1,
+      1,
+    );
+
     if (neutralYaw === null) {
       neutralYaw = rawYaw;
       neutralPitch = rawPitch;
@@ -73,6 +90,14 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
         yaw: clamp(rawYaw - neutralYaw, -0.42, 0.42),
         pitch: clamp(rawPitch - (neutralPitch ?? 0), -0.3, 0.3),
         roll: clamp(rawRoll - (neutralRoll ?? 0), -0.24, 0.24),
+        lookX,
+        lookY,
+        // The avatar's visual-left eye corresponds to the subject's right eye.
+        blinkLeft: blendshape('eyeBlinkRight'),
+        blinkRight: blendshape('eyeBlinkLeft'),
+        jawOpen: blendshape('jawOpen'),
+        smile: (blendshape('mouthSmileLeft') + blendshape('mouthSmileRight')) * 0.5,
+        mouthRound: Math.max(blendshape('mouthFunnel'), blendshape('mouthPucker')),
       },
     });
   } catch (cause) {

@@ -30,6 +30,17 @@ export interface AvatarState {
   mouthWidth: number;
   /** Rounded O/U vowel shape, 0–1. */
   mouthRoundness: number;
+  /** Smile corner lift, 0–1. */
+  mouthSmile: number;
+  /** Smoothed local face tracking signals. */
+  presenceWeight: number;
+  presenceLookX: number;
+  presenceLookY: number;
+  presenceBlinkLeft: number;
+  presenceBlinkRight: number;
+  presenceJawOpen: number;
+  presenceSmile: number;
+  presenceMouthRound: number;
   /** Rare burst signal, 0.08 at rest and 1 during a glitch. */
   glitch: number;
   /** Behaviour mode weights, each 0 → 1. Crossfade on a mode change. */
@@ -63,6 +74,15 @@ export const createAvatarState = (): AvatarState => ({
   mouthAperture: 0,
   mouthWidth: 1,
   mouthRoundness: 0,
+  mouthSmile: 0,
+  presenceWeight: 0,
+  presenceLookX: 0,
+  presenceLookY: 0,
+  presenceBlinkLeft: 0,
+  presenceBlinkRight: 0,
+  presenceJawOpen: 0,
+  presenceSmile: 0,
+  presenceMouthRound: 0,
   glitch: 0,
   modes: { idle: 1, listening: 0, thinking: 0, speaking: 0 },
   listen: 0,
@@ -128,6 +148,13 @@ export function useAvatarAnimation({
     presenceYaw: 0,
     presencePitch: 0,
     presenceRoll: 0,
+    presenceLookX: 0,
+    presenceLookY: 0,
+    presenceBlinkLeft: 0,
+    presenceBlinkRight: 0,
+    presenceJawOpen: 0,
+    presenceSmile: 0,
+    presenceMouthRound: 0,
   });
 
   useFrame(({ pointer, camera }, rawDelta) => {
@@ -139,6 +166,21 @@ export function useAvatarAnimation({
     r.presenceYaw = THREE.MathUtils.damp(r.presenceYaw, presence?.active ? presence.yaw : 0, 7, dt);
     r.presencePitch = THREE.MathUtils.damp(r.presencePitch, presence?.active ? presence.pitch : 0, 7, dt);
     r.presenceRoll = THREE.MathUtils.damp(r.presenceRoll, presence?.active ? presence.roll : 0, 7, dt);
+    r.presenceLookX = THREE.MathUtils.damp(r.presenceLookX, presence?.active ? presence.lookX : 0, 9, dt);
+    r.presenceLookY = THREE.MathUtils.damp(r.presenceLookY, presence?.active ? presence.lookY : 0, 9, dt);
+    r.presenceBlinkLeft = THREE.MathUtils.damp(r.presenceBlinkLeft, presence?.active ? presence.blinkLeft : 0, 28, dt);
+    r.presenceBlinkRight = THREE.MathUtils.damp(r.presenceBlinkRight, presence?.active ? presence.blinkRight : 0, 28, dt);
+    r.presenceJawOpen = THREE.MathUtils.damp(r.presenceJawOpen, presence?.active ? presence.jawOpen : 0, 12, dt);
+    r.presenceSmile = THREE.MathUtils.damp(r.presenceSmile, presence?.active ? presence.smile : 0, 9, dt);
+    r.presenceMouthRound = THREE.MathUtils.damp(r.presenceMouthRound, presence?.active ? presence.mouthRound : 0, 9, dt);
+    s.presenceWeight = r.presenceWeight;
+    s.presenceLookX = r.presenceLookX;
+    s.presenceLookY = r.presenceLookY;
+    s.presenceBlinkLeft = r.presenceBlinkLeft;
+    s.presenceBlinkRight = r.presenceBlinkRight;
+    s.presenceJawOpen = r.presenceJawOpen;
+    s.presenceSmile = r.presenceSmile;
+    s.presenceMouthRound = r.presenceMouthRound;
     if (!offsetApplied.current) {
       offsetApplied.current = true;
       const q = Number(new URLSearchParams(window.location.search).get('t'));
@@ -253,10 +295,23 @@ export function useAvatarAnimation({
       r.mouthRoundness = THREE.MathUtils.damp(r.mouthRoundness, vRound * speakGate, 9, dt);
 
       const breathPart = Math.max(s.breath, 0) * 0.03 * (1 - speaking);
-      s.mouthJaw = THREE.MathUtils.clamp(r.mouthJaw + breathPart * 0.35, 0, 1);
-      s.mouthAperture = THREE.MathUtils.clamp(r.mouthAperture + breathPart, 0, 1);
-      s.mouthWidth = r.mouthWidth;
-      s.mouthRoundness = r.mouthRoundness;
+      const faceExpression = r.presenceWeight * (1 - speaking);
+      const trackedOpen = smooth(0.08, 0.48, r.presenceJawOpen) * 0.78;
+      const trackedSmile = smooth(0.06, 0.62, r.presenceSmile);
+      const trackedRound = smooth(0.05, 0.58, r.presenceMouthRound);
+      const faceJaw = THREE.MathUtils.clamp(trackedOpen * 0.72, 0, 0.58);
+      const faceAperture = THREE.MathUtils.clamp(trackedOpen * 0.9, 0, 0.7);
+      const faceWidth = THREE.MathUtils.clamp(1 + trackedSmile * 0.12 - trackedRound * 0.18, 0.72, 1.12);
+
+      s.mouthJaw = THREE.MathUtils.lerp(
+        THREE.MathUtils.clamp(r.mouthJaw + breathPart * 0.35, 0, 1), faceJaw, faceExpression,
+      );
+      s.mouthAperture = THREE.MathUtils.lerp(
+        THREE.MathUtils.clamp(r.mouthAperture + breathPart, 0, 1), faceAperture, faceExpression,
+      );
+      s.mouthWidth = THREE.MathUtils.lerp(r.mouthWidth, faceWidth, faceExpression);
+      s.mouthRoundness = THREE.MathUtils.lerp(r.mouthRoundness, trackedRound, faceExpression);
+      s.mouthSmile = trackedSmile * faceExpression;
     }
 
     // Occasional slight head tilt.
