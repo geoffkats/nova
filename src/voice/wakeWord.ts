@@ -51,7 +51,10 @@ export function wakeAudioWorthSending(samples: Float32Array, sampleRate: number)
     n += 1;
   }
   const rms = Math.sqrt(sum / Math.max(1, n));
-  return rms >= 0.01 || peak >= 0.05;
+  // Laptop and headset microphones often deliver conversational speech below
+  // -40 dBFS when automatic gain control is disabled. Keep a modest floor here;
+  // the phrase check below still prevents background speech from waking Nova.
+  return rms >= 0.005 || peak >= 0.025;
 }
 
 const WAKE_FILLER =

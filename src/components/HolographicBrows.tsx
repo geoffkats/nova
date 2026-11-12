@@ -48,15 +48,15 @@ void main() {
   float strokes = 0.72 + 0.28 * sin(xo * 26.0 - uTime * 0.5);
 
   // Faint ridge contour tracking below the brow.
-  float ridge = exp(-pow((p.y - y0 + 0.3) * 13.0, 2.0)) * 0.16;
+  float ridge = exp(-pow((p.y - y0 + 0.3) * 13.0, 2.0)) * 0.05;
 
   float fade = smoothstep(1.0, 0.7, abs(p.x)) * mix(1.0, 0.75, smoothstep(0.4, 1.0, xo));
 
   // Kept brighter and whiter than the surface contours so the brow reads as a
   // feature rather than another topographic line across the forehead.
-  float light = core * strokes * 0.95 + ridge;
+  float light = core * strokes * 0.22 + ridge;
   float hot = clamp(uFurrow * 0.5 + uRaise * 0.35, 0.0, 1.0);
-  vec3 col = mix(uColor, uHighlight, core * (0.35 + hot * 0.5)) * light;
+  vec3 col = mix(uColor, uHighlight, core * (0.1 + hot * 0.22)) * light;
   gl_FragColor = vec4(col, clamp(light * fade, 0.0, 1.0) * uActive);
 }
 `;

@@ -35,6 +35,8 @@ function createHologramMaterial(lineMode: number) {
       uReveal: { value: 0 },
       uLineMode: { value: lineMode },
       uGlitch: { value: 0 },
+      uJaw: { value: 0 },
+      uBioFold: { value: 0 },
       uColor: { value: HOLO_CYAN.clone() },
       uHighlight: { value: HOLO_WHITE.clone() },
     },
@@ -52,6 +54,23 @@ export function HolographicFace({ stateRef, quality }: Props) {
   );
   const surfaceMat = useMemo(() => createHologramMaterial(0), []);
   const latticeMat = useMemo(() => createHologramMaterial(1), []);
+  const depthMat = useMemo(
+    () => new THREE.ShaderMaterial({
+      vertexShader: vert,
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.FrontSide,
+      uniforms: {
+        uTime: { value: 0 },
+        uNoiseStrength: { value: 1 },
+        uGlitch: { value: 0 },
+        uJaw: { value: 0 },
+      },
+    }),
+    [],
+  );
   const lattice = useMemo(() => new THREE.LineSegments(latticeGeo, latticeMat), [latticeGeo, latticeMat]);
 
   useEffect(() => () => surfaceGeo.dispose(), [surfaceGeo]);
@@ -60,17 +79,21 @@ export function HolographicFace({ stateRef, quality }: Props) {
     () => () => {
       surfaceMat.dispose();
       latticeMat.dispose();
+      depthMat.dispose();
     },
-    [surfaceMat, latticeMat],
+    [surfaceMat, latticeMat, depthMat],
   );
 
   useFrame(() => {
     const s = stateRef.current;
     const glitch = s.glitch * s.settle + (1 - s.surface) * 0.6;
+    depthMat.uniforms.uTime.value = s.time;
+    depthMat.uniforms.uGlitch.value = glitch;
+    depthMat.uniforms.uJaw.value = s.mouthJaw;
 
     for (const [mat, weight] of [
       [surfaceMat, 1],
-      [latticeMat, 0.3],
+      [latticeMat, 0.42],
     ] as const) {
       const u = mat.uniforms;
       u.uTime.value = s.time;
@@ -78,7 +101,10 @@ export function HolographicFace({ stateRef, quality }: Props) {
       u.uReveal.value = s.surface;
       u.uOpacity.value = s.surface * weight;
       u.uGlitch.value = glitch;
-      u.uIntensity.value = (weight === 1 ? 1.0 : 1.15) * (0.94 + 0.06 * s.breath) * s.glow;
+      u.uJaw.value = s.mouthJaw;
+      // Biology is an abstract fold field inside the face, never a separate icon.
+      u.uBioFold.value = s.modes.idle * s.settle;
+      u.uIntensity.value = (weight === 1 ? 1.0 : 1.25) * (0.94 + 0.06 * s.breath) * s.glow;
       // Scanlines tighten a little while he is attending to you.
       u.uScanSpeed.value = 1 + s.modes.listening * 0.5 + s.modes.thinking * 0.9;
     }
@@ -86,6 +112,8 @@ export function HolographicFace({ stateRef, quality }: Props) {
 
   return (
     <group>
+      {/* Invisible depth-only head so orbital light stays behind facial features. */}
+      <mesh geometry={surfaceGeo} material={depthMat} renderOrder={-1} />
       <mesh geometry={surfaceGeo} material={surfaceMat} renderOrder={1} />
       <primitive object={lattice} renderOrder={2} />
     </group>

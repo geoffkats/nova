@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('avatarHost', {
   getPlatform: () => ipcRenderer.invoke('avatar:platform'),
+  guardSnapshot: () => ipcRenderer.invoke('avatar:guard-snapshot'),
+  guardScanRepository: () => ipcRenderer.invoke('avatar:guard-repository-scan'),
+  guardLookUpAdvisories: (args) => ipcRenderer.invoke('avatar:guard-advisories', args),
+  guardScanWebsite: (args) => ipcRenderer.invoke('avatar:guard-website-scan', args),
   brainStatus: () => ipcRenderer.invoke('avatar:brain-status'),
   resetChat: () => ipcRenderer.invoke('avatar:reset-chat'),
   warmupTts: () => ipcRenderer.invoke('avatar:warmup-tts'),

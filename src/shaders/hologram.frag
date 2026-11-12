@@ -7,6 +7,7 @@ uniform float uNoiseStrength;
 uniform float uFresnelPower;
 uniform float uReveal;     // 0 → 1 startup materialisation
 uniform float uLineMode;   // 0 = surface, 1 = contour lattice
+uniform float uBioFold;    // quiet, organic folding field while idle
 uniform vec3 uColor;
 uniform vec3 uHighlight;
 
@@ -87,13 +88,20 @@ void main() {
   float burn = exp(-pow((field - threshold) * 45.0, 2.0)) * (0.5 + 0.5 * step(0.55, nz)) * (1.0 - smoothstep(0.85, 1.0, uReveal));
 
   // Topographic depth contours — denser where depth changes (ridges / folds).
-  float depthK = vObjPos.z * 32.0 + vObjPos.y * 1.6;
+  float depthK = vObjPos.z * 24.0 + vObjPos.y * 1.2;
   float cw = fwidth(depthK);
   float distToLine = 0.5 - abs(fract(depthK) - 0.5);
   float contour = 1.0 - smoothstep(0.0, cw * 1.25, distToLine);
   contour *= smoothstep(-0.1, 0.45, vObjPos.z);
   // Boost contours on nose / midface so the ridge reads head-on.
   contour *= 1.0 + noseM * 0.85 + feature * 0.25;
+
+  // Slow nested curves suggest protein folding within the holographic skin.
+  // They avoid the eyes, nose and mouth so the face remains the clearest signal.
+  float foldA = sin(vObjPos.y * 6.4 + sin(vObjPos.x * 4.2 + t * 0.16) * 0.72 + nz * 1.8);
+  float foldB = sin(vObjPos.y * 8.1 + vObjPos.x * 3.1 + cos(vObjPos.y * 2.6 + t * 0.12) * 0.5);
+  float proteinFold = pow(max(0.0, 1.0 - abs(foldA * 0.68 + foldB * 0.32)), 10.0);
+  proteinFold *= uBioFold * (1.0 - feature * 0.82) * smoothstep(-0.35, 0.4, vObjPos.z);
 
   // Soft key light from upper-left so planes of the face separate.
   float key = pow(max(dot(n, normalize(vec3(-0.45, 0.55, 0.7))), 0.0), 2.0);
@@ -102,20 +110,24 @@ void main() {
   // Ridges (high fresnel / high z facing) stay bright — hologram energy on edges.
   float valley = pow(facing, 1.35); // 1 = facing camera flat, lower in recesses
   float ridge = fresnel;
-  float formGain = mix(0.42, 1.15, valley) * (0.85 + ridge * 0.45);
+  float formGain = mix(0.62, 1.2, valley) * (0.9 + ridge * 0.5);
 
-  float surfaceA = 0.01 + fresnel * 0.72 + fine * 0.04 + energy * 0.18 + contour * 0.5 * (0.55 + 0.45 * sweep) + key * 0.08;
-  float lineA = 0.14 + fresnel * 0.55 + fine * 0.1 + energy * 0.65;
+  // Keep the animated scan energy subtle on the face so it never reads as a ring cutting across it.
+  float surfaceA = 0.035 + fresnel * 0.88 + fine * 0.055 + energy * 0.04 + contour * 0.18 * (0.62 + 0.38 * sweep) + proteinFold * 0.055 + key * 0.2;
+  float lineA = 0.22 + fresnel * 0.74 + fine * 0.12 + energy * 0.08;
   float alpha = mix(surfaceA, lineA, uLineMode);
   alpha *= formGain;
   alpha *= back * bottom * mix(patches, 1.0, uLineMode * 0.4) * sweep * flicker;
   alpha = alpha * reveal + burn * 0.35 * back * bottom;
   alpha *= uOpacity;
 
-  vec3 color = mix(uColor, uHighlight, clamp(fresnel * 0.5 + energy * 0.5 + burn + contour * 0.15, 0.0, 1.0));
+  float highlightMix = clamp(fresnel * 0.5 + energy * 0.12 + burn + contour * 0.15 + proteinFold * 0.22, 0.0, 1.0);
+  // Keep the wire grid recognisably electric blue; reserve white for accents.
+  highlightMix *= mix(0.82, 0.52, uLineMode);
+  vec3 color = mix(uColor, uHighlight, highlightMix);
   // Dim color in valleys so additive stack doesn't wash the face.
-  color *= mix(0.55, 1.08, valley);
-  color *= uIntensity * (1.0 + (nz - 0.5) * uNoiseStrength * 0.28 * featureQuiet);
+  color *= mix(0.72, 1.18, valley);
+  color *= uIntensity * (1.08 + key * 0.16 + (nz - 0.5) * uNoiseStrength * 0.2 * featureQuiet);
 
   gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
 }

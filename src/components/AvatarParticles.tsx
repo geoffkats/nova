@@ -22,6 +22,7 @@ uniform float uForm;
 uniform float uAppear;
 uniform float uDisperse;
 uniform float uListen;
+uniform float uJaw;
 uniform float uSize;
 uniform float uPixelRatio;
 attribute vec3 aStart;
@@ -42,6 +43,9 @@ void main() {
   float e = p < 0.5 ? 4.0 * p * p * p : 1.0 - pow(-2.0 * p + 2.0, 3.0) * 0.5;
 
   vec3 target = position;
+
+  float jawWeight = 1.0 - smoothstep(-0.8, -0.34, position.y);
+  target.y -= uJaw * 0.14 * jawWeight;
 
   // Shedding: some particles continuously lift off along the normal and fade.
   float shedT = fract(uTime * (0.035 + aRandom.y * 0.07) + aRandom.z);
@@ -67,7 +71,7 @@ void main() {
 
   float depth = 0.3 + 0.7 * smoothstep(-0.8, 0.55, position.z);
   float shedFade = 1.0 - shedT * aShed;
-  vAlpha = uAppear * depth * shedFade * mix(0.35, 1.0, smoothstep(0.0, 0.25, p));
+  vAlpha = uAppear * depth * shedFade * mix(0.28, 0.72, smoothstep(0.0, 0.25, p));
   vHot = step(0.965, aRandom.w);
 
   float size = uSize * (0.55 + aRandom.w * 0.9) * (1.0 + vHot * 0.8);
@@ -85,7 +89,7 @@ void main() {
   float d = length(gl_PointCoord - 0.5);
   float soft = smoothstep(0.5, 0.0, d);
   float core = smoothstep(0.2, 0.0, d);
-  float a = (soft * 0.35 + core * 0.55) * vAlpha;
+  float a = (soft * 0.28 + core * 0.42) * vAlpha;
   if (a < 0.003) discard;
   vec3 c = mix(uColor, uHighlight, core * 0.5 + vHot * 0.4) * uIntensity;
   gl_FragColor = vec4(c, a);
@@ -163,6 +167,7 @@ function pointsMaterial(vertexShader: string, size: number, intensity = 1) {
       uAppear: { value: 0 },
       uDisperse: { value: 0 },
       uListen: { value: 0 },
+      uJaw: { value: 0 },
       uConverge: { value: 0 },
       uSize: { value: size },
       uPixelRatio: { value: 1 },
@@ -263,8 +268,8 @@ export function AvatarParticles({ stateRef, quality }: Props) {
 
   const faceGeo = useMemo(() => buildFaceParticles(quality.faceParticles), [quality.faceParticles]);
   const haloGeo = useMemo(() => buildHalo(quality.haloParticles), [quality.haloParticles]);
-  const faceMat = useMemo(() => pointsMaterial(faceVert, 14.5, 0.95), []);
-  const haloMat = useMemo(() => pointsMaterial(haloVert, 11, 0.78), []);
+  const faceMat = useMemo(() => pointsMaterial(faceVert, 8, 0.72), []);
+  const haloMat = useMemo(() => pointsMaterial(haloVert, 8, 0.64), []);
 
   useEffect(() => () => faceGeo.dispose(), [faceGeo]);
   useEffect(() => () => haloGeo.dispose(), [haloGeo]);
@@ -285,6 +290,7 @@ export function AvatarParticles({ stateRef, quality }: Props) {
     f.uAppear.value = s.appear;
     f.uDisperse.value = s.disperse;
     f.uListen.value = s.modes.listening * s.listen;
+    f.uJaw.value = s.mouthJaw;
     f.uPixelRatio.value = dpr;
     // Particles hand over part of the brightness to the surface once it exists.
     f.uIntensity.value = (1.1 - s.surface * 0.35) * s.glow;

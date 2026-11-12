@@ -1,6 +1,7 @@
 uniform float uTime;
 uniform float uNoiseStrength;
 uniform float uGlitch;
+uniform float uJaw;
 
 varying vec3 vNormalV;
 varying vec3 vViewDir;
@@ -11,6 +12,10 @@ float hash11(float n) { return fract(sin(n) * 43758.5453123); }
 
 void main() {
   vec3 p = position;
+
+  // Let the lower mandible travel independently during speech.
+  float jawWeight = 1.0 - smoothstep(-0.8, -0.34, p.y);
+  p.y -= uJaw * 0.14 * jawWeight;
 
   // Holographic distortion: thin horizontal slices occasionally slip sideways.
   float slice = floor(p.y * 26.0);
@@ -25,7 +30,7 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   vViewDir = normalize(-mv.xyz);
   vNormalV = normalize(normalMatrix * normal);
-  vObjPos = position;
+  vObjPos = p;
   vWorldPos = (modelMatrix * vec4(p, 1.0)).xyz;
   gl_Position = projectionMatrix * mv;
 }

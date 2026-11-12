@@ -1,15 +1,14 @@
 /**
  * Route utterances:
- * - instant: pure greetings only (no real questions)
  * - tools: clear email/calendar/files ask
  * - chat: everything else (LLM, no tools)
  */
 
 const TOOL_DOMAIN_RE =
-  /\b(e-?mails?|inbox|gmail|unread|calendar|meetings?|schedule|appointments?|files?|drive|documents?|docs|folders?|attachments?)\b/i;
+  /\b(e-?mails?|inbox|gmail|unread|calendar|meetings?|schedule|appointments?|files?|drive|documents?|docs|folders?|attachments?|time|date|weather|timers?|alarms?|reminders?)\b/i;
 
 const TOOL_ACTION_RE =
-  /\b(check|search|find|look\s*up|pull\s*up|open|read|show|list)\b/i;
+  /\b(check|search|find|look\s*up|pull\s*up|open|read|show|list|what|tell|set|start|create|make|add|remind)\b/i;
 
 /** Real questions must never get canned instant lines. */
 const QUESTION_RE =
@@ -53,7 +52,7 @@ function isPureGreeting(t) {
 
 /**
  * @param {string} userText
- * @returns {'instant' | 'chat' | 'tools'}
+ * @returns {'chat' | 'tools'}
  */
 export function classifyIntent(userText) {
   const raw = String(userText || '').trim();
@@ -75,7 +74,9 @@ export function classifyIntent(userText) {
     return 'chat';
   }
 
-  if (isPureGreeting(t)) return 'instant';
+  // Route greetings through Nova's actual conversation model too. Fixed
+  // greeting strings made voice chat sound like a set of prerecorded replies.
+  if (isPureGreeting(t)) return 'chat';
 
   return 'chat';
 }

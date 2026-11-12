@@ -7,7 +7,9 @@ import { HolographicBrows } from './HolographicBrows';
 import { HolographicMouth } from './HolographicMouth';
 import { AtmosphericDust, AvatarParticles } from './AvatarParticles';
 import { EnergyRings } from './EnergyRings';
+import { ScienceMotifs } from './ScienceMotifs';
 import type { Quality } from '../quality';
+import type { PresencePose } from '../vision/useNovaPresence';
 
 interface Props {
   quality: Quality;
@@ -17,6 +19,7 @@ interface Props {
   inputLevelRef?: MutableRefObject<number>;
   /** Target behaviour mode. Defaults to idle. */
   modeRef?: MutableRefObject<AvatarMode>;
+  presenceRef?: MutableRefObject<PresencePose>;
   reducedMotion?: boolean;
 }
 
@@ -25,6 +28,7 @@ export function HolographicAvatar({
   audioLevelRef,
   inputLevelRef,
   modeRef,
+  presenceRef,
   reducedMotion,
 }: Props) {
   const headRef = useRef<THREE.Group>(null);
@@ -33,6 +37,7 @@ export function HolographicAvatar({
     audioLevelRef,
     inputLevelRef,
     modeRef,
+    presenceRef,
     reducedMotion,
   });
 
@@ -52,6 +57,7 @@ export function HolographicAvatar({
         <HolographicEyes stateRef={stateRef} />
         <HolographicBrows stateRef={stateRef} />
         <HolographicMouth stateRef={stateRef} />
+        <ScienceMotifs stateRef={stateRef} />
       </group>
 
       <EnergyRings stateRef={stateRef} />

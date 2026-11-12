@@ -37,11 +37,11 @@ void main() {
   // Two comet arcs travelling around the ring.
   float arc = pow(t, 9.0) + pow(fract(t + 0.5), 18.0) * 0.4;
   float dash = uDashes > 0.0 ? step(0.45, fract(vT * uDashes)) : 1.0;
-  float base = 0.03 * dash;
+  float base = 0.075 * dash;
   // Draw-in during startup.
   float reveal = smoothstep(vT - 0.05, vT, uReveal * 1.05);
   float depth = 0.35 + 0.65 * smoothstep(-1.8, 1.2, vDepth);
-  float a = (base + arc * 0.7) * reveal * depth * uStrength * uBoost;
+  float a = (base + arc * 0.82) * reveal * depth * uStrength * uBoost;
   vec3 c = mix(uColor, uHighlight, pow(t, 20.0));
   gl_FragColor = vec4(c, a);
 }
@@ -59,10 +59,10 @@ interface RingSpec {
 }
 
 const RINGS: RingSpec[] = [
-  { radius: 1.3, rotation: [Math.PI / 2 - 0.12, 0, 0.06], position: [0, 0.78, -0.1], speed: 0.05, spin: 0.018, strength: 0.7, dashes: 0, squash: 0.92 },
-  { radius: 1.5, rotation: [Math.PI / 2 + 0.22, 0.1, -0.1], position: [0, -0.95, 0], speed: -0.032, spin: -0.012, strength: 0.45, dashes: 140, squash: 0.9 },
-  { radius: 1.62, rotation: [0, 0, 0], position: [0, 0.04, -0.9], speed: 0.022, spin: 0.006, strength: 0.4, dashes: 0, squash: 1.0 },
-  { radius: 2.05, rotation: [Math.PI / 2 - 0.3, -0.15, 0.2], position: [0, -0.1, -0.2], speed: 0.015, spin: 0.009, strength: 0.22, dashes: 220, squash: 0.95 },
+  { radius: 1.3, rotation: [Math.PI / 2 - 0.12, 0, 0.06], position: [0, 1.25, -1.6], speed: 0.05, spin: 0.018, strength: 0.7, dashes: 0, squash: 0.92 },
+  { radius: 1.5, rotation: [Math.PI / 2 + 0.22, 0.1, -0.1], position: [0, -1.35, -1.6], speed: -0.032, spin: -0.012, strength: 0.45, dashes: 140, squash: 0.9 },
+  { radius: 1.62, rotation: [0, 0, 0], position: [0, 0.04, -2.2], speed: 0.022, spin: 0.006, strength: 0.4, dashes: 0, squash: 1.0 },
+  { radius: 2.05, rotation: [Math.PI / 2 - 0.3, -0.15, 0.2], position: [0, -0.1, -1.7], speed: 0.015, spin: 0.009, strength: 0.14, dashes: 220, squash: 0.95 },
 ];
 
 function ringGeometry(radius: number, squash: number, segments = 384) {
@@ -131,7 +131,9 @@ export function EnergyRings({ stateRef }: Props) {
       mat.uniforms.uBoost.value = boost;
       mat.uniforms.uReveal.value = THREE.MathUtils.clamp(s.rings * 1.25 - i * 0.08, 0, 1);
       // Thinking spins the shell up noticeably.
-      line.rotateZ(spec.spin * delta * (1 + s.modes.thinking * 2.2));
+      // Listening turns the shell into a particle accelerator; thought tightens
+      // the field and speeds it up more gently.
+      line.rotateZ(spec.spin * delta * (1 + s.modes.thinking * 2.2 + s.modes.listening * 3.2));
     });
   });
 

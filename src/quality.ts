@@ -10,29 +10,29 @@ export interface Quality {
 }
 
 export const QUALITY: Record<QualityTier, Quality> = {
-  // High = recording / flex — denser than medium, not a solid fill.
+  // High keeps enough surface points for depth while preserving facial features.
   high: {
     tier: 'high',
-    faceParticles: 11000,
-    haloParticles: 1400,
-    dustParticles: 420,
+    faceParticles: 2500,
+    haloParticles: 800,
+    dustParticles: 100,
     dpr: [1, 2],
     multisampling: 4,
   },
   // Everyday Nova — sharp silhouette, less mush.
   medium: {
     tier: 'medium',
-    faceParticles: 7800,
-    haloParticles: 1100,
-    dustParticles: 320,
+    faceParticles: 1700,
+    haloParticles: 600,
+    dustParticles: 70,
     dpr: [1, 1.5],
     multisampling: 0,
   },
   low: {
     tier: 'low',
-    faceParticles: 4200,
-    haloParticles: 700,
-    dustParticles: 220,
+    faceParticles: 1100,
+    haloParticles: 400,
+    dustParticles: 50,
     dpr: [0.75, 1],
     multisampling: 0,
   },

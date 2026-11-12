@@ -11,6 +11,9 @@ import { cancelSpeech, enqueuePcmChunk, playAudioBuffer, speakFallback, waitForP
 import { createQwenPcmPump } from './voice/qwenPcm';
 import { isNudgeAck, isNudgeContinue, isSleepPhrase, isWakeFiller, isWakePhrase, stripWake, wakeAudioWorthSending } from './voice/wakeWord';
 import { ArtifactCard, type WorkspaceArtifact } from './artifact/ArtifactCard';
+import { GuardPanel } from './guard/GuardPanel';
+import { PresenceControl } from './components/PresenceControl';
+import { useNovaPresence } from './vision/useNovaPresence';
 import { detectQuality, QUALITY, stepDown, type QualityTier } from './quality';
 
 /** Electron IPC often delivers audio as Buffer / Uint8Array / number[]. */
@@ -63,7 +66,11 @@ function LevelReadout({
 
 export default function App() {
   const [tier, setTier] = useState<QualityTier>(detectQuality);
+  const [guardOpen, setGuardOpen] = useState(false);
   const { modeRef, mode, setMode, showHud } = useAvatarMode();
+  const captureMode = new URLSearchParams(window.location.search).get('capture') === '1';
+  const isBrowserDemo = !window.avatarHost;
+  const presence = useNovaPresence();
   const replyTimer = useRef<number>(0);
   const replyGen = useRef(0);
   const bridgePlay = useRef(Promise.resolve());
@@ -97,7 +104,7 @@ export default function App() {
 
   const refreshBrain = async () => {
     if (!window.avatarHost) {
-      const offline = { ready: false, brain: 'none', stt: 'none', tts: 'local' };
+      const offline: BrainStatus = { ready: false, brain: 'none', stt: 'none', tts: 'local' };
       brainRef.current = offline;
       setBrain(offline);
       return offline;
@@ -108,7 +115,7 @@ export default function App() {
       setBrain(status);
       return status;
     } catch {
-      const offline = { ready: false, brain: 'error', stt: 'error', tts: 'local' };
+      const offline: BrainStatus = { ready: false, brain: 'error', stt: 'error', tts: 'local' };
       brainRef.current = offline;
       setBrain(offline);
       return offline;
@@ -197,6 +204,51 @@ export default function App() {
       sessionRef.current = 'awake';
       setSession('awake');
       setLastEvent('nova is awake');
+      // If the user said "Hey Nova, <request>" in one breath, don't throw
+      // away the request after using the wake phrase to open the session.
+      const leftover = String(rest || '').trim();
+      if (leftover) {
+        const gen = ++replyGen.current;
+        ttsHadAudio.current = false;
+        earlySpeakGen.current = -1;
+        setLastEvent(`you: ${leftover}`);
+        setMode('thinking');
+        try {
+          const result = await window.avatarHost?.converse?.({ userText: leftover });
+          if (gen !== replyGen.current) {
+            wakingRef.current = false;
+            return;
+          }
+          if (!result?.ok) {
+            setLastEvent(result?.error || 'Nova could not answer that yet');
+            setMode('listening');
+            wakingRef.current = false;
+            return;
+          }
+          setLastEvent(`nova: ${result.reply}`);
+          const hasStreamedAudio = ttsHadAudio.current &&
+            (result.streamed || result.spokeEarly || earlySpeakGen.current === gen);
+          setMode('speaking');
+          if (hasStreamedAudio) {
+            await ttsEndWait.current.catch(() => {});
+            await waitForPlayback();
+            await earlySpeak.current.catch(() => {});
+          } else {
+            const audio = toArrayBuffer(result.audio as ArrayBuffer | number[] | null);
+            if (audio && result.mime) await playAudioBuffer(audio, result.mime);
+            else await speakFallback(result.reply);
+          }
+          if (gen !== replyGen.current) {
+            wakingRef.current = false;
+            return;
+          }
+          setLastEvent('back to listening');
+          setMode('listening');
+        } catch (error) {
+          setLastEvent(error instanceof Error ? error.message : 'Nova could not answer that yet');
+          setMode('listening');
+        }
+      }
     }
     wakingRef.current = false;
   };
@@ -663,7 +715,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (earsAuto.current || micStatus !== 'off') return;
+    if (captureMode || isBrowserDemo || earsAuto.current || micStatus !== 'off') return;
     const t = window.setTimeout(() => {
       if (earsAuto.current || micStatus !== 'off') return;
       earsAuto.current = true;
@@ -679,15 +731,15 @@ export default function App() {
       });
     }, 600);
     return () => window.clearTimeout(t);
-  }, [micStatus, startMic, setMode]);
+  }, [captureMode, isBrowserDemo, micStatus, startMic, setMode]);
 
   return (
-    <div className="stage">
+    <div className={`stage${isBrowserDemo ? ' stage--web-demo' : ''}`} data-capture={captureMode || undefined}>
       <Canvas
         dpr={quality.dpr}
-        camera={{ fov: 35, near: 0.1, far: 50, position: [0, 0, 5.6] }}
+        camera={{ fov: 31, near: 0.1, far: 50, position: [0, 0, 5.6] }}
         gl={{ antialias: false, alpha: false, powerPreference: 'high-performance' }}
-        aria-label="Holographic AI face"
+        aria-label="Nova holographic face"
       >
         <PerformanceMonitor
           flipflops={2}
@@ -698,14 +750,15 @@ export default function App() {
           modeRef={modeRef}
           inputLevelRef={levelRef}
           reducedMotion={reducedMotion}
+          presenceRef={presence.poseRef}
         />
         <EffectComposer multisampling={quality.multisampling}>
-          <Bloom mipmapBlur luminanceThreshold={0.18} luminanceSmoothing={0.35} intensity={0.85} radius={0.72} />
+          <Bloom mipmapBlur luminanceThreshold={0.16} luminanceSmoothing={0.35} intensity={1.05} radius={0.72} />
           <Noise premultiply blendFunction={BlendFunction.SCREEN} opacity={0.035} />
           <Vignette offset={0.28} darkness={0.85} />
         </EffectComposer>
       </Canvas>
-      <div className="artifact-stage">
+      {!isBrowserDemo && <div className="artifact-stage">
         <ArtifactCard
           artifact={artifact}
           onOpen={(url) => void window.avatarHost?.openUrl?.(url)}
@@ -714,8 +767,8 @@ export default function App() {
             window.avatarHost?.dismissArtifact?.();
           }}
         />
-      </div>
-      {showHud && (
+      </div>}
+      {showHud && !isBrowserDemo && (
         <div className="mode-hud">
           <span>mode {mode}</span>
           <span> · {session === 'awake' ? 'awake' : 'asleep'}</span>
@@ -748,23 +801,34 @@ export default function App() {
           {micDevice && <span className="mode-hud__device">{micDevice}</span>}
         </div>
       )}
-      <button
-        type="button"
-        className="mic-toggle board-toggle"
-        onClick={() => void window.avatarHost?.showBoard?.()}
-      >
-        Board
-      </button>
-      <button
-        type="button"
-        className="mic-toggle"
-        data-live={micLive || undefined}
-        data-awake={session === 'awake' || undefined}
-        onClick={toggleMic}
-        disabled={micStatus === 'starting'}
-      >
-        {micButtonLabel(micStatus, session, micLive)}
-      </button>
+      {guardOpen && !isBrowserDemo && <GuardPanel onClose={() => setGuardOpen(false)} />}
+      <PresenceControl
+        status={presence.status}
+        error={presence.error}
+        isBrowserDemo={isBrowserDemo}
+        onStart={() => void presence.start()}
+        onStop={presence.stop}
+      />
+      {!isBrowserDemo && (
+        <>
+          <button type="button" className="mic-toggle guard-toggle" onClick={() => setGuardOpen(true)}>
+            Guard
+          </button>
+          <button type="button" className="mic-toggle board-toggle" onClick={() => void window.avatarHost?.showBoard?.()}>
+            Board
+          </button>
+          <button
+            type="button"
+            className="mic-toggle"
+            data-live={micLive || undefined}
+            data-awake={session === 'awake' || undefined}
+            onClick={toggleMic}
+            disabled={micStatus === 'starting'}
+          >
+            {micButtonLabel(micStatus, session, micLive)}
+          </button>
+        </>
+      )}
     </div>
   );
 }

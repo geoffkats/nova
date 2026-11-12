@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { config as loadEnv } from 'dotenv';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -31,6 +31,11 @@ import {
   startReminderScheduler,
   stopReminderScheduler,
 } from './agent/reminders.js';
+import { getLocalSecuritySnapshot } from './guard/localAudit.js';
+import { scanRepository } from './guard/repositoryAudit.js';
+import { lookUpRepositoryAdvisories } from './guard/advisories.js';
+import { inspectWebsite } from './guard/siteAudit.js';
+import { randomUUID } from 'node:crypto';
 
 const here = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: join(here, '../.env'), override: true });
@@ -50,6 +55,7 @@ if (isDev) {
 /** @type {BrowserWindow | null} */
 let win = null;
 let shutdownQwen = () => {};
+const repositoryScans = new Map();
 
 function isOwnContent(url = '') {
   if (url.startsWith('file://')) return true;
@@ -116,6 +122,12 @@ function lockDownPermissions() {
     if (!allowed.has(permission)) return false;
     return isOwnContent(requestingOrigin);
   });
+}
+
+function assertMainRenderer(event) {
+  if (!win || event.sender !== win.webContents || !isOwnContent(event.senderFrame?.url ?? '')) {
+    throw new Error('Nova Guard is available only to Nova’s trusted main window.');
+  }
 }
 
 function brainConfig() {
@@ -423,6 +435,39 @@ app.whenReady().then(() => {
         (ttfa != null ? ` ttfa=${ttfa}ms` : '') +
         (info?.epoch != null ? ` epoch=${info.epoch}` : ''),
     );
+  });
+
+  ipcMain.handle('avatar:guard-snapshot', async (event) => {
+    assertMainRenderer(event);
+    return getLocalSecuritySnapshot();
+  });
+
+  ipcMain.handle('avatar:guard-repository-scan', async (event) => {
+    assertMainRenderer(event);
+    const selected = await dialog.showOpenDialog(win, {
+      title: 'Choose a repository folder for Nova Guard',
+      properties: ['openDirectory'],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
+    const report = await scanRepository(selected.filePaths[0]);
+    const scanId = randomUUID();
+    repositoryScans.set(scanId, { packages: report.packages, createdAt: Date.now() });
+    for (const [id, item] of repositoryScans) if (Date.now() - item.createdAt > 30 * 60 * 1000) repositoryScans.delete(id);
+    const { packages, ...safeReport } = report;
+    return { canceled: false, scanId, ...safeReport };
+  });
+
+  ipcMain.handle('avatar:guard-advisories', async (event, args = {}) => {
+    assertMainRenderer(event);
+    if (args.consent !== true) throw new Error('Online advisory lookup requires your consent.');
+    const cached = repositoryScans.get(args.scanId);
+    if (!cached || Date.now() - cached.createdAt > 30 * 60 * 1000) throw new Error('Choose and scan the repository again before looking up advisories.');
+    return lookUpRepositoryAdvisories(cached.packages);
+  });
+
+  ipcMain.handle('avatar:guard-website-scan', async (event, args = {}) => {
+    assertMainRenderer(event);
+    return inspectWebsite(args.url, args.authorized === true);
   });
 
   ipcMain.handle('avatar:platform', async () => ({

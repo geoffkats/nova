@@ -1,6 +1,7 @@
 import { useRef, type MutableRefObject, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import type { PresencePose } from '../vision/useNovaPresence';
 
 /** Behaviour modes. Driven externally — later by the voice loop, for now by keys. */
 export type AvatarMode = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -27,6 +28,8 @@ export interface AvatarState {
   mouthJaw: number;
   mouthAperture: number;
   mouthWidth: number;
+  /** Rounded O/U vowel shape, 0–1. */
+  mouthRoundness: number;
   /** Rare burst signal, 0.08 at rest and 1 during a glitch. */
   glitch: number;
   /** Behaviour mode weights, each 0 → 1. Crossfade on a mode change. */
@@ -59,6 +62,7 @@ export const createAvatarState = (): AvatarState => ({
   mouthJaw: 0,
   mouthAperture: 0,
   mouthWidth: 1,
+  mouthRoundness: 0,
   glitch: 0,
   modes: { idle: 1, listening: 0, thinking: 0, speaking: 0 },
   listen: 0,
@@ -89,6 +93,8 @@ interface Options {
   inputLevelRef?: MutableRefObject<number>;
   /** Target behaviour mode. Defaults to idle when not supplied. */
   modeRef?: MutableRefObject<AvatarMode>;
+  /** Optional locally estimated face pose from Nova Presence. */
+  presenceRef?: MutableRefObject<PresencePose>;
   reducedMotion?: boolean;
 }
 
@@ -97,6 +103,7 @@ export function useAvatarAnimation({
   audioLevelRef,
   inputLevelRef,
   modeRef,
+  presenceRef,
   reducedMotion = false,
 }: Options) {
   const state = useRef<AvatarState>(createAvatarState());
@@ -114,14 +121,24 @@ export function useAvatarAnimation({
     mouthJaw: 0,
     mouthAperture: 0,
     mouthWidth: 1,
+    mouthRoundness: 0,
     speechPrev: 0,
     consonantBurst: 0,
+    presenceWeight: 0,
+    presenceYaw: 0,
+    presencePitch: 0,
+    presenceRoll: 0,
   });
 
   useFrame(({ pointer, camera }, rawDelta) => {
     const s = state.current;
     const r = rig.current;
     const dt = Math.min(rawDelta, 0.1); // avoid jumps after tab switches
+    const presence = presenceRef?.current;
+    r.presenceWeight = THREE.MathUtils.damp(r.presenceWeight, presence?.active ? 1 : 0, 5, dt);
+    r.presenceYaw = THREE.MathUtils.damp(r.presenceYaw, presence?.active ? presence.yaw : 0, 7, dt);
+    r.presencePitch = THREE.MathUtils.damp(r.presencePitch, presence?.active ? presence.pitch : 0, 7, dt);
+    r.presenceRoll = THREE.MathUtils.damp(r.presenceRoll, presence?.active ? presence.roll : 0, 7, dt);
     if (!offsetApplied.current) {
       offsetApplied.current = true;
       const q = Number(new URLSearchParams(window.location.search).get('t'));
@@ -187,7 +204,9 @@ export function useAvatarAnimation({
         Math.abs(Math.sin(t * 9.1)) * 0.55 +
         Math.abs(Math.sin(t * 13.7 + 1.3)) * 0.3 +
         Math.abs(Math.sin(t * 4.3 + 0.4)) * 0.15;
-      s.speech = r.speechEnv * syllables * s.settle;
+      // Keep a little jaw motion between syllable peaks so the mouth reads as
+      // continuous speech instead of blinking between a line and an open pose.
+      s.speech = r.speechEnv * (0.48 + syllables * 0.52) * s.settle;
     }
 
     // Mouth DOF: envelope + light viseme cycling while speaking (A/E/O/U/closed).
@@ -208,11 +227,16 @@ export function useAvatarAnimation({
       const vJaw = (wA * 0.9 + wE * 0.28 + wO * 0.58 + wU * 0.22) / wSum;
       const vAp = (wA * 0.72 + wE * 0.48 + wO * 0.52 + wU * 0.38) / wSum;
       const vWidth = (wA * 1.06 + wE * 1.14 + wO * 0.74 + wU * 0.58) / wSum;
+      const vRound = (wO * 0.85 + wU * 0.95 + wA * 0.08) / wSum;
 
       const speakGate = THREE.MathUtils.smoothstep(level, 0.04, 0.22);
-      const jawTarget = Math.pow(THREE.MathUtils.clamp(level * 1.05, 0, 1), 0.85) * (0.35 + 0.65 * vJaw);
-      let apTarget = THREE.MathUtils.clamp(level * 1.25 + r.consonantBurst * 0.55, 0, 1);
-      apTarget = THREE.MathUtils.lerp(apTarget, vAp * level * 1.2, speakGate * 0.75);
+      const jawTarget = THREE.MathUtils.clamp(
+        Math.pow(THREE.MathUtils.clamp(level * 1.3, 0, 1), 0.72) * (0.58 + 0.82 * vJaw),
+        0,
+        1,
+      );
+      let apTarget = THREE.MathUtils.clamp(level * 1.8 + r.consonantBurst * 0.4, 0, 1);
+      apTarget = THREE.MathUtils.lerp(apTarget, vAp * level * 1.65, speakGate * 0.75);
       // Consonant snaps aperture down briefly.
       apTarget *= 1 - Math.min(1, r.consonantBurst * 0.35);
       const widthTarget = THREE.MathUtils.clamp(
@@ -221,16 +245,18 @@ export function useAvatarAnimation({
         1.14,
       );
 
-      const jawLambda = level > r.mouthJaw ? 7 : 4.5;
+      const jawLambda = level > r.mouthJaw ? 8 : 5.5;
       const apLambda = level > r.mouthAperture ? 22 : 11;
       r.mouthJaw = THREE.MathUtils.damp(r.mouthJaw, jawTarget, jawLambda, dt);
       r.mouthAperture = THREE.MathUtils.damp(r.mouthAperture, apTarget, apLambda, dt);
       r.mouthWidth = THREE.MathUtils.damp(r.mouthWidth, widthTarget, 10, dt);
+      r.mouthRoundness = THREE.MathUtils.damp(r.mouthRoundness, vRound * speakGate, 9, dt);
 
       const breathPart = Math.max(s.breath, 0) * 0.03 * (1 - speaking);
       s.mouthJaw = THREE.MathUtils.clamp(r.mouthJaw + breathPart * 0.35, 0, 1);
       s.mouthAperture = THREE.MathUtils.clamp(r.mouthAperture + breathPart, 0, 1);
       s.mouthWidth = r.mouthWidth;
+      s.mouthRoundness = r.mouthRoundness;
     }
 
     // Occasional slight head tilt.
@@ -246,11 +272,16 @@ export function useAvatarAnimation({
 
     const head = headRef.current;
     if (head) {
-      const idle = s.settle * motion;
-      head.rotation.y = (0.035 * Math.sin(t * 0.23) + 0.012 * Math.sin(t * 0.61 + 1.3)) * idle + r.mouse.x * 0.14;
+      const idle = s.settle * motion * (1 - r.presenceWeight * 0.65);
+      head.rotation.y =
+        (0.035 * Math.sin(t * 0.23) + 0.012 * Math.sin(t * 0.61 + 1.3)) * idle +
+        r.mouse.x * 0.14 * (1 - r.presenceWeight * 0.7) +
+        r.presenceYaw * r.presenceWeight;
       head.rotation.x =
-        (0.018 * Math.sin(t * 0.19 + 0.7) + s.breath * 0.006) * idle - r.mouse.y * 0.08;
-      head.rotation.z = r.tilt * idle + 0.004 * Math.sin(t * 0.43) * idle;
+        (0.018 * Math.sin(t * 0.19 + 0.7) + s.breath * 0.006) * idle -
+        r.mouse.y * 0.08 * (1 - r.presenceWeight * 0.7) +
+        r.presencePitch * r.presenceWeight;
+      head.rotation.z = r.tilt * idle + 0.004 * Math.sin(t * 0.43) * idle + r.presenceRoll * r.presenceWeight;
       head.position.y = 0.06 + (s.breath * 0.012 + 0.005 * Math.sin(t * 0.37)) * idle - s.mouthJaw * 0.012;
       // Settle from a tiny forward drift during formation.
       head.position.z = (1 - s.settle) * -0.15;

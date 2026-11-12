@@ -1,11 +1,13 @@
 {
-  "name": "holographic-ai-avatar",
+  "name": "nova",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "predev": "node scripts/copy-vision-assets.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-vision-assets.mjs",
     "build": "tsc -b && vite build",
     "build:single": "tsc -b && vite build --mode singlefile",
     "preview": "vite preview",
@@ -29,6 +31,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",

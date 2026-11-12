@@ -25,7 +25,8 @@ export interface TurnConfig {
 export const DEFAULT_TURN_CONFIG: TurnConfig = {
   threshold: 0.5,
   onsetFrames: 3, // ~96 ms of speech, enough to ignore a click
-  hangoverMs: 450,
+  // Keep the pause before transcription short enough for voice conversation.
+  hangoverMs: 320,
   minUtteranceMs: 250,
   maxUtteranceMs: 8000,
   completionThreshold: 0.6,

@@ -59,15 +59,15 @@ void main() {
   vec2 iq = q - uLook * vec2(0.18, 0.08);
   float r = length(iq);
   float ang = atan(iq.y, iq.x);
-  float ring = exp(-pow((r - 0.2) * 40.0, 2.0));
-  float innerRing = exp(-pow((r - 0.14) * 60.0, 2.0)) * 0.5;
+  float ring = exp(-pow((r - 0.2) * 40.0, 2.0)) * 1.12;
+  float innerRing = exp(-pow((r - 0.14) * 60.0, 2.0)) * 0.62;
   float fibres = (0.5 + 0.5 * sin(ang * 36.0 + uTime * 0.4)) * smoothstep(0.21, 0.1, r) * smoothstep(0.05, 0.09, r);
   float segment = smoothstep(0.7, 1.0, sin(ang * 3.0 - uTime * 0.7)) * exp(-pow((r - 0.285) * 40.0, 2.0)) * 0.6;
   float fill = smoothstep(0.26, 0.0, r) * 0.22;
   float pupil = smoothstep(0.05, 0.012, r);
   float glint = smoothstep(0.035, 0.0, length(iq - vec2(-0.06, 0.05)));
 
-  float irisLight = ring * 0.7 + innerRing * 0.6 + fibres * 0.3 + fill + segment * 0.5;
+  float irisLight = ring * 0.82 + innerRing * 0.72 + fibres * 0.38 + fill * 1.15 + segment * 0.58;
   vec3 col = uColor * irisLight * uGlow + uHighlight * (pupil * 0.9 + glint * 0.6) * uGlow;
   float a = (irisLight * 0.9 + pupil + glint) * aperture;
 
@@ -80,12 +80,12 @@ void main() {
   a += ambient;
 
   // Soft orbital rim (socket edge) — reads depth without solid mesh.
-  float rim = exp(-pow((length(q) - 0.55) * 14.0, 2.0)) * 0.22 * corners * (0.55 + 0.45 * open);
+  float rim = exp(-pow((length(q) - 0.55) * 14.0, 2.0)) * 0.28 * corners * (0.55 + 0.45 * open);
   col += uColor * rim;
   a += rim;
 
   // Soft halo around the eye, hidden when blinking.
-  float halo = exp(-length(q) * 5.0) * 0.09 * open * corners;
+  float halo = exp(-length(q) * 5.0) * 0.12 * open * corners;
   col += uColor * halo;
   a += halo;
 

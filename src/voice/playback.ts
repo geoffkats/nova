@@ -7,6 +7,7 @@
  */
 
 import { cancelSpeech as cancelBrowserSpeech, speakReply as browserSpeak } from './speak';
+import type { AdvisoryReport, LocalGuardSnapshot, RepositoryScan, WebsiteReport } from '../guard/types';
 
 let current: HTMLAudioElement | null = null;
 let pcmCtx: AudioContext | null = null;
@@ -211,6 +212,10 @@ export interface BrainStatus {
 
 export interface AvatarHost {
   getPlatform: () => Promise<{ platform: string; electron: string; dev: boolean; brainReady?: boolean }>;
+  guardSnapshot?: () => Promise<LocalGuardSnapshot>;
+  guardScanRepository?: () => Promise<RepositoryScan>;
+  guardLookUpAdvisories?: (args: { scanId: string; consent: boolean }) => Promise<AdvisoryReport>;
+  guardScanWebsite?: (args: { url: string; authorized: boolean }) => Promise<WebsiteReport>;
   brainStatus: () => Promise<BrainStatus>;
   resetChat: () => Promise<{ ok: boolean }>;
   warmupTts?: () => Promise<{ ok: boolean; kokoro?: boolean; error?: string; skipped?: boolean; tts?: string; model?: string }>;
