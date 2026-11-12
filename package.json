@@ -7,6 +7,7 @@
   "scripts": {
     "predev": "node scripts/copy-vision-assets.mjs",
     "dev": "vite",
+    "preelectron:dev": "node scripts/copy-vision-assets.mjs",
     "prebuild": "node scripts/copy-vision-assets.mjs",
     "build": "tsc -b && vite build",
     "build:single": "tsc -b && vite build --mode singlefile",

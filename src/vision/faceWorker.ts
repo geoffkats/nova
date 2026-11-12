@@ -17,7 +17,9 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
   const message = event.data;
   if (message.type === 'init') {
     try {
-      const vision = await FilesetResolver.forVisionTasks(message.wasmRoot);
+      // This worker is a JavaScript module; load MediaPipe's module-compatible
+      // WASM bootstrap so it can initialize ModuleFactory in this context.
+      const vision = await FilesetResolver.forVisionTasks(message.wasmRoot, true);
       landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: message.modelUrl },
         runningMode: 'VIDEO',
@@ -27,8 +29,12 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
         minTrackingConfidence: 0.55,
       });
       self.postMessage({ type: 'ready' });
-    } catch {
-      self.postMessage({ type: 'error', message: 'Nova could not load the on-device face tracker.' });
+    } catch (cause) {
+      const details = cause instanceof Error ? cause.message : String(cause);
+      self.postMessage({
+        type: 'error',
+        message: `Nova could not load the on-device face tracker: ${details}`,
+      });
     }
     return;
   }
@@ -69,9 +75,10 @@ self.onmessage = async (event: MessageEvent<IncomingMessage>) => {
         roll: clamp(rawRoll - (neutralRoll ?? 0), -0.24, 0.24),
       },
     });
-  } catch {
+  } catch (cause) {
     if (message.type === 'frame') message.bitmap.close();
-    self.postMessage({ type: 'error', message: 'Nova’s local face tracker stopped unexpectedly.' });
+    const details = cause instanceof Error ? cause.message : String(cause);
+    self.postMessage({ type: 'error', message: `Nova’s local face tracker stopped: ${details}` });
   }
 };
 
