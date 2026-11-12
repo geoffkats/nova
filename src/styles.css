@@ -31,13 +31,13 @@ body,
 
 .stage__temporary-greeting {
   position: absolute;
-  z-index: 0;
-  top: 17%;
-  left: 50%;
-  max-width: 96vw;
-  transform: translate(-50%, -50%);
-  color: rgba(105, 210, 255, 0.62);
-  font: 700 clamp(2.6rem, 8vw, 6.8rem)/1 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  z-index: 2;
+  top: 12%;
+  right: 30px;
+  max-width: calc(100vw - 360px);
+  transform: translateY(-50%);
+  color: rgba(125, 220, 255, 0.92);
+  font: 700 clamp(2.4rem, 7vw, 5.2rem)/1 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0.075em;
   white-space: nowrap;
   text-shadow: 0 0 16px rgba(46, 173, 255, 0.62), 0 0 48px rgba(46, 173, 255, 0.4);
@@ -45,6 +45,15 @@ body,
   user-select: none;
   opacity: 0;
   animation: temporary-greeting-arrive 900ms ease-out 3.25s forwards;
+}
+
+@media (max-width: 640px) {
+  .stage__temporary-greeting {
+    top: 21%;
+    right: 14px;
+    max-width: calc(100vw - 28px);
+    font-size: clamp(2rem, 9vw, 3.5rem);
+  }
 }
 
 @keyframes temporary-greeting-arrive {
